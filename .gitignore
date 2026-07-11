@@ -1,0 +1,91 @@
+# ============================================
+# 🦄 TWILIGHT SPARKLE BOT — .gitignore
+# ============================================
+
+# ========== ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ ==========
+.env
+.env.local
+.env.*.local
+
+# ========== PYTHON ==========
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ========== ВИРТУАЛЬНОЕ ОКРУЖЕНИЕ ==========
+venv/
+env/
+ENV/
+.venv
+env.bak/
+venv.bak/
+
+# ========== БАЗЫ ДАННЫХ ==========
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+data/*.sqlite
+!data/.gitkeep
+
+# ========== ЛОГИ ==========
+logs/
+*.log
+*.log.*
+
+# ========== АУДИОФАЙЛЫ ==========
+data/audio/
+*.ogg
+*.mp3
+*.wav
+*.flac
+
+# ========== IDE И РЕДАКТОРЫ ==========
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.iml
+.DS_Store
+Thumbs.db
+
+# ========== ТЕСТЫ И ПОКРЫТИЕ ==========
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# ========== ВРЕМЕННЫЕ ФАЙЛЫ ==========
+tmp/
+temp/
+*.tmp
+*.bak
+*.backup
+
+# ========== ДЕПЛОЙ ==========
+*.pid
+*.lock
