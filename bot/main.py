@@ -1,4 +1,3 @@
-# bot/main.py
 """
 Главный модуль бота Сумеречная Искорка.
 Инициализация, настройка и запуск бота.
@@ -24,7 +23,7 @@ from bot.handlers.messages import handle_message
 from bot.handlers.photos import handle_photo
 from bot.handlers.voice import handle_voice
 from bot.handlers.admin import admin_panel
-from bot.core.scheduler import start_scheduler, add_chat
+from bot.core.scheduler import start_scheduler, add_chat, remove_chat
 from bot.core.reminder_scheduler import start_reminder_scheduler
 from bot.core.constants import VERSION
 
@@ -56,7 +55,7 @@ def main():
     app = Application.builder().token(Config.TELEGRAM_TOKEN).build()
 
     # Автоматическая загрузка подписок из .env
-    default_chats = Config.DEFAULT_CHATS if hasattr(Config, 'DEFAULT_CHATS') else ""
+    default_chats = getattr(Config, 'DEFAULT_CHATS', "")
     if default_chats:
         for chat_id in default_chats.split(","):
             try:

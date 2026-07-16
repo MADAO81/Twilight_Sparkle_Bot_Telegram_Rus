@@ -1,4 +1,3 @@
-# bot/handlers/messages.py
 """
 Обработчик текстовых сообщений для бота Сумеречная Искорка.
 Реагирует на упоминания, распознаёт напоминания и погоду.
@@ -9,7 +8,6 @@
 
 import logging
 import re
-from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
 from bot.services.ai_service import get_twilight_response
@@ -34,9 +32,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(get_working_status_message())
         return
 
-    # Проверка: нужно ли реагировать
+    # === ПРОВЕРКА: нужно ли реагировать ===
     if update.message.chat.type == "private":
-        pass
+        pass  # В ЛС отвечаем всегда
     else:
         bot_username = context.bot.username
         is_mentioned = False
