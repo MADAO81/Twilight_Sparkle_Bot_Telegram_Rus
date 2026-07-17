@@ -1,4 +1,4 @@
-# bot/core/scheduler.py
+cat > bot/core/scheduler.py << 'EOF'
 """
 Планировщик для бота Сумеречная Искорка.
 Отправка факта дня в 10:00 и спокойной ночи в 21:00.
@@ -9,6 +9,8 @@
 
 import logging
 import sqlite3
+from telegram import Update
+from telegram.ext import ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from bot.config import Config
@@ -66,6 +68,30 @@ def get_active_chats():
     rows = cursor.fetchall()
     conn.close()
     return [row[0] for row in rows]
+
+
+async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик команды /subscribe."""
+    chat_id = update.message.chat_id
+    add_chat(chat_id)
+    await update.message.reply_text(
+        "📚 *Ты подписался на ежедневные рассылки!*\n\n"
+        "📖 Каждый день в 10:00 я буду присылать тебе интересный факт дня!\n"
+        "🌙 А в 21:00 — желать спокойной ночи!\n\n"
+        "Чтобы отписаться, напиши /unsubscribe 😢",
+        parse_mode="Markdown"
+    )
+
+
+async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик команды /unsubscribe."""
+    chat_id = update.message.chat_id
+    remove_chat(chat_id)
+    await update.message.reply_text(
+        "😢 *Ты отписался от ежедневных рассылок!*\n\n"
+        "Если захочешь вернуться — напиши /subscribe 📚",
+        parse_mode="Markdown"
+    )
 
 
 async def send_daily_fact(app):
@@ -128,7 +154,7 @@ def start_scheduler(app):
         _init_db()
 
         # Автоматическая загрузка подписок из .env
-        default_chats = Config.DEFAULT_CHATS if hasattr(Config, 'DEFAULT_CHATS') else ""
+        default_chats = getattr(Config, 'DEFAULT_CHATS', "")
         if default_chats:
             for chat_id in default_chats.split(","):
                 try:
@@ -170,3 +196,4 @@ def stop_scheduler():
         logger.info("⏹️ Планировщик рассылок остановлен")
     except Exception as e:
         logger.error(f"❌ Ошибка при остановке планировщика: {e}")
+EOF
