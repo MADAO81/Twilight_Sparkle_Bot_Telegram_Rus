@@ -1,10 +1,9 @@
-# bot/core/reminder_parser.py
 """
 Парсер напоминаний для Сумеречной Искорки.
 Извлекает дату, время и текст из сообщений пользователя.
 
 Автор: MADAO81
-Версия: 1.0
+Версия: 1.3 — улучшенная обработка запятых и вежливых слов
 """
 
 import re
@@ -29,37 +28,45 @@ class ReminderParser:
             Tuple: (текст_напоминания, datetime, is_recurring, recurring_type)
             или None, если не удалось распарсить
         """
-        text = text.lower().strip()
+        original_text = text
+        text_for_search = text.lower().strip()
 
         # Проверяем ключевые слова
-        if not any(word in text for word in ["напомни", "напоминание", "напомнить", "запомни"]):
+        if not any(word in text_for_search for word in ["напомни", "напоминание", "напомнить", "запомни"]):
             return None
 
         # Убираем ключевые слова в начале
         for word in ["напомни", "напоминание", "напомнить", "запомни"]:
-            if text.startswith(word):
-                text = text[len(word):].strip()
+            if text_for_search.startswith(word):
+                text_for_search = text_for_search[len(word):].strip()
                 break
+
+        # Убираем "пожалуйста", "плиз", "пж" и запятые
+        text_for_search = text_for_search.replace("пожалуйста", "").strip()
+        text_for_search = text_for_search.replace("плиз", "").strip()
+        text_for_search = text_for_search.replace("пж", "").strip()
+        text_for_search = re.sub(r'[,，、]', ' ', text_for_search).strip()
+        text_for_search = re.sub(r'\s+', ' ', text_for_search).strip()
 
         # Проверяем на повторяющиеся
         is_recurring = False
         recurring_type = None
 
-        if "каждый день" in text or "ежедневно" in text or "каждый день" in text:
+        if "каждый день" in text_for_search or "ежедневно" in text_for_search:
             is_recurring = True
             recurring_type = "daily"
-            text = text.replace("каждый день", "").replace("ежедневно", "").strip()
-        elif "каждую неделю" in text or "еженедельно" in text:
+            text_for_search = text_for_search.replace("каждый день", "").replace("ежедневно", "").strip()
+        elif "каждую неделю" in text_for_search or "еженедельно" in text_for_search:
             is_recurring = True
             recurring_type = "weekly"
-            text = text.replace("каждую неделю", "").replace("еженедельно", "").strip()
-        elif "каждый месяц" in text or "ежемесячно" in text:
+            text_for_search = text_for_search.replace("каждую неделю", "").replace("еженедельно", "").strip()
+        elif "каждый месяц" in text_for_search or "ежемесячно" in text_for_search:
             is_recurring = True
             recurring_type = "monthly"
-            text = text.replace("каждый месяц", "").replace("ежемесячно", "").strip()
+            text_for_search = text_for_search.replace("каждый месяц", "").replace("ежемесячно", "").strip()
 
-        # Парсим "через N дней/часов/минут"
-        through_match = re.search(r'через\s+(\d+)\s+(дней|день|дня|часов|час|часа|минут|минуты|минуту)', text)
+        # --- ПАРСИНГ "ЧЕРЕЗ N ..." ---
+        through_match = re.search(r'через\s+(\d+)\s+(дней|день|дня|часов|час|часа|минут|минуты|минуту)', text_for_search)
         if through_match:
             number = int(through_match.group(1))
             unit = through_match.group(2)
@@ -73,84 +80,106 @@ class ReminderParser:
             else:
                 remind_at = datetime.now() + timedelta(days=number)
 
-            # Убираем часть с "через ..." из текста
-            text = re.sub(r'через\s+\d+\s+(дней|день|дня|часов|час|часа|минут|минуты|минуту)', '', text).strip()
+            text_for_search = re.sub(r'через\s+\d+\s+(дней|день|дня|часов|час|часа|минут|минуты|минуту)', '', text_for_search).strip()
 
-            # Проверяем, есть ли указание времени
-            time_match = re.search(r'в\s+(\d{1,2})[:.](\d{2})', text)
+            # Проверяем время
+            time_match = re.search(r'в\s+(\d{1,2})\s*[:.-]\s*(\d{2})', text_for_search)
             if time_match:
                 hour = int(time_match.group(1))
                 minute = int(time_match.group(2))
                 remind_at = remind_at.replace(hour=hour, minute=minute, second=0, microsecond=0)
-                text = re.sub(r'в\s+\d{1,2}[:.]\d{2}', '', text).strip()
+                text_for_search = re.sub(r'в\s+\d{1,2}\s*[:.-]\s*\d{2}', '', text_for_search).strip()
 
-            return text, remind_at, is_recurring, recurring_type
+            # Убираем лишние слова
+            text_for_search = re.sub(r'^[,，、\s]+', '', text_for_search)
+            if not text_for_search:
+                text_for_search = "Напоминание"
 
-        # Парсим "15 июля в 14:00"
-        date_patterns = [
-            # 15 июля в 14:00
-            r'(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+в\s+(\d{1,2})[:.](\d{2})',
-            # 15.07 в 14:00
-            r'(\d{1,2})[./](\d{1,2})\s+в\s+(\d{1,2})[:.](\d{2})',
-            # сегодня в 14:00
-            r'сегодня\s+в\s+(\d{1,2})[:.](\d{2})',
-            # завтра в 14:00
-            r'завтра\s+в\s+(\d{1,2})[:.](\d{2})',
-        ]
+            return text_for_search, remind_at, is_recurring, recurring_type
 
+        # --- ПАРСИНГ ДАТЫ (НОВЫЙ — ИЩЕМ В ЛЮБОМ МЕСТЕ) ---
         remind_at = None
         matched_text = ""
 
-        for pattern in date_patterns:
-            match = re.search(pattern, text)
+        # 1. "сегодня в 19-10"
+        match = re.search(r'сегодня\s+в\s+(\d{1,2})\s*[:.-]\s*(\d{2})', text_for_search)
+        if match:
+            hour = int(match.group(1))
+            minute = int(match.group(2))
+            now = datetime.now()
+            remind_at = datetime(now.year, now.month, now.day, hour, minute, 0, 0)
+            matched_text = match.group(0)
+
+        # 2. "завтра в 19-10"
+        if not remind_at:
+            match = re.search(r'завтра\s+в\s+(\d{1,2})\s*[:.-]\s*(\d{2})', text_for_search)
             if match:
-                groups = match.groups()
+                hour = int(match.group(1))
+                minute = int(match.group(2))
+                now = datetime.now() + timedelta(days=1)
+                remind_at = datetime(now.year, now.month, now.day, hour, minute, 0, 0)
+                matched_text = match.group(0)
 
-                if "января" in pattern:
-                    day = int(groups[0])
-                    month = ReminderParser._month_to_number(groups[1])
-                    hour = int(groups[2])
-                    minute = int(groups[3])
-                    year = datetime.now().year
-                    remind_at = datetime(year, month, day, hour, minute, 0, 0)
-                    matched_text = match.group(0)
+        # 3. "17 июля в 19-10"
+        if not remind_at:
+            match = re.search(r'(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+в\s+(\d{1,2})\s*[:.-]\s*(\d{2})', text_for_search)
+            if match:
+                day = int(match.group(1))
+                month = ReminderParser._month_to_number(match.group(2))
+                hour = int(match.group(3))
+                minute = int(match.group(4))
+                year = datetime.now().year
+                remind_at = datetime(year, month, day, hour, minute, 0, 0)
+                matched_text = match.group(0)
 
-                elif "сегодня" in pattern:
-                    hour = int(groups[0])
-                    minute = int(groups[1])
-                    now = datetime.now()
-                    remind_at = datetime(now.year, now.month, now.day, hour, minute, 0, 0)
-                    matched_text = match.group(0)
+        # 4. "17-07-2026 в 19-10"
+        if not remind_at:
+            match = re.search(r'(\d{1,2})[-./](\d{1,2})[-./](\d{4})\s+в\s+(\d{1,2})\s*[:.-]\s*(\d{2})', text_for_search)
+            if match:
+                day = int(match.group(1))
+                month = int(match.group(2))
+                year = int(match.group(3))
+                hour = int(match.group(4))
+                minute = int(match.group(5))
+                remind_at = datetime(year, month, day, hour, minute, 0, 0)
+                matched_text = match.group(0)
 
-                elif "завтра" in pattern:
-                    hour = int(groups[0])
-                    minute = int(groups[1])
-                    now = datetime.now() + timedelta(days=1)
-                    remind_at = datetime(now.year, now.month, now.day, hour, minute, 0, 0)
-                    matched_text = match.group(0)
+        # 5. "17.07 в 19-10"
+        if not remind_at:
+            match = re.search(r'(\d{1,2})[-./](\d{1,2})\s+в\s+(\d{1,2})\s*[:.-]\s*(\d{2})', text_for_search)
+            if match:
+                day = int(match.group(1))
+                month = int(match.group(2))
+                hour = int(match.group(3))
+                minute = int(match.group(4))
+                year = datetime.now().year
+                remind_at = datetime(year, month, day, hour, minute, 0, 0)
+                matched_text = match.group(0)
 
-                else:  # 15.07 в 14:00
-                    day = int(groups[0])
-                    month = int(groups[1])
-                    hour = int(groups[2])
-                    minute = int(groups[3])
-                    year = datetime.now().year
-                    remind_at = datetime(year, month, day, hour, minute, 0, 0)
-                    matched_text = match.group(0)
-
-                break
+        # 6. Просто "в 19-10" (сегодня)
+        if not remind_at:
+            match = re.search(r'в\s+(\d{1,2})\s*[:.-]\s*(\d{2})', text_for_search)
+            if match:
+                hour = int(match.group(1))
+                minute = int(match.group(2))
+                now = datetime.now()
+                remind_at = datetime(now.year, now.month, now.day, hour, minute, 0, 0)
+                matched_text = match.group(0)
 
         if remind_at is None:
             return None
 
         # Убираем дату и время из текста
-        text = text.replace(matched_text, "").strip()
+        if matched_text:
+            text_for_search = text_for_search.replace(matched_text, "").strip()
 
-        # Если текст пустой, ставим дефолтный
-        if not text:
-            text = "Напоминание"
+        # Убираем лишние слова и запятые
+        text_for_search = re.sub(r'^[,，、\s]+', '', text_for_search)
 
-        return text, remind_at, is_recurring, recurring_type
+        if not text_for_search:
+            text_for_search = "Напоминание"
+
+        return text_for_search, remind_at, is_recurring, recurring_type
 
     @staticmethod
     def _month_to_number(month_name: str) -> int:

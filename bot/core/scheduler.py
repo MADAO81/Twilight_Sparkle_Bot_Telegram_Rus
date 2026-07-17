@@ -1,4 +1,3 @@
-cat > bot/core/scheduler.py << 'EOF'
 """
 Планировщик для бота Сумеречная Искорка.
 Отправка факта дня в 10:00 и спокойной ночи в 21:00.
@@ -19,7 +18,6 @@ from bot.services.ai_service import get_daily_fact, get_goodnight_message
 logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
-
 DB_PATH = Config.DATA_DIR / "subscriptions.db"
 
 
@@ -196,4 +194,3 @@ def stop_scheduler():
         logger.info("⏹️ Планировщик рассылок остановлен")
     except Exception as e:
         logger.error(f"❌ Ошибка при остановке планировщика: {e}")
-EOF

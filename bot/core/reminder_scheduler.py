@@ -1,14 +1,12 @@
-# bot/core/reminder_scheduler.py
 """
 Планировщик напоминаний для Сумеречной Искорки.
 Проверяет каждую минуту, не пора ли отправить напоминание.
 
 Автор: MADAO81
-Версия: 1.0
+Версия: 1.1 — отправка конкретному пользователю
 """
 
 import logging
-import random
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from bot.core.reminder_manager import ReminderManager
@@ -32,6 +30,7 @@ async def check_reminders(app):
 
         for reminder in due_reminders:
             try:
+                user_id = reminder['user_id']
                 chat_id = reminder['chat_id']
                 text = reminder['text']
                 reminder_id = reminder['id']
@@ -40,24 +39,24 @@ async def check_reminders(app):
 
                 # Генерируем тёплое сообщение с напоминанием
                 response = await get_twilight_response(
-                    user_message=f"Напомни пользователю о деле: {text}. Сделай это мягко, но чётко. Добавь пару ободряющих слов.",
+                    user_message=f"Напомни пользователю о деле: {text}. Сделай это мягко, но чётко. Обратись к нему по имени, если знаешь. Добавь пару ободряющих слов.",
                     mood_description="happy"
                 )
 
                 if not response:
                     response = f"📚 *Напоминание!*\n\n{text}\n\nНе забудь это сделать! 💜"
 
+                # Отправляем личное сообщение пользователю
                 await app.bot.send_message(
-                    chat_id=chat_id,
+                    chat_id=user_id,
                     text=response,
                     parse_mode="Markdown"
                 )
 
-                logger.info(f"✅ Отправлено напоминание #{reminder_id} в чат {chat_id}")
+                logger.info(f"✅ Отправлено напоминание #{reminder_id} пользователю {user_id}")
 
                 # Обработка после отправки
                 if is_recurring and recurring_type:
-                    # Переносим на следующий период
                     success = reminder_manager.reschedule_recurring(reminder_id, recurring_type)
                     if success:
                         logger.info(f"🔄 Напоминание #{reminder_id} перенесено ({recurring_type})")
@@ -65,7 +64,6 @@ async def check_reminders(app):
                         reminder_manager.mark_sent(reminder_id)
                         logger.warning(f"⚠️ Не удалось перенести #{reminder_id}, деактивируем")
                 else:
-                    # Разовое — деактивируем
                     reminder_manager.mark_sent(reminder_id)
                     logger.info(f"🗑️ Напоминание #{reminder_id} деактивировано")
 
