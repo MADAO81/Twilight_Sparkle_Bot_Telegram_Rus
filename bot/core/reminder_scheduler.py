@@ -3,7 +3,7 @@
 Проверяет каждую минуту, не пора ли отправить напоминание.
 
 Автор: MADAO81
-Версия: 1.1 — отправка конкретному пользователю
+Версия: 1.2 — чёткое напоминание без "примеров"
 """
 
 import logging
@@ -36,16 +36,14 @@ async def check_reminders(app):
                 is_recurring = reminder['is_recurring']
                 recurring_type = reminder.get('recurring_type')
 
-                # Генерируем тёплое сообщение с напоминанием
-                response = await get_twilight_response(
-                    user_message=f"Напомни пользователю о деле: {text}. Сделай это мягко, но чётко. Обратись к нему по имени, если знаешь. Добавь пару ободряющих слов.",
-                    mood_description="happy"
+                # Отправляем ЧЁТКОЕ напоминание без лишних "примеров"
+                response = (
+                    f"📚 *Напоминание от Сумеречной Искорки!*\n\n"
+                    f"⏰ *Ты просила напомнить:*\n"
+                    f"_{text}_\n\n"
+                    f"💪 Я верю в тебя — ты справишься! Если нужна будет помощь — я рядом. 📖✨"
                 )
 
-                if not response:
-                    response = f"📚 *Напоминание!*\n\n{text}\n\nНе забудь это сделать! 💜"
-
-                # Отправляем личное сообщение пользователю
                 await app.bot.send_message(
                     chat_id=user_id,
                     text=response,
@@ -54,7 +52,6 @@ async def check_reminders(app):
 
                 logger.info(f"✅ Отправлено напоминание #{reminder_id} пользователю {user_id}")
 
-                # Обработка после отправки
                 if is_recurring and recurring_type:
                     success = reminder_manager.reschedule_recurring(reminder_id, recurring_type)
                     if success:
