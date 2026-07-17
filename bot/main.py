@@ -23,7 +23,7 @@ from bot.handlers.messages import handle_message
 from bot.handlers.photos import handle_photo
 from bot.handlers.voice import handle_voice
 from bot.handlers.admin import admin_panel
-from bot.core.scheduler import start_scheduler, add_chat, remove_chat
+from bot.core.scheduler import start_scheduler, subscribe_command, unsubscribe_command
 from bot.core.reminder_scheduler import start_reminder_scheduler
 from bot.core.constants import VERSION
 
@@ -54,17 +54,6 @@ def main():
 
     app = Application.builder().token(Config.TELEGRAM_TOKEN).build()
 
-    # Автоматическая загрузка подписок из .env
-    default_chats = getattr(Config, 'DEFAULT_CHATS', "")
-    if default_chats:
-        for chat_id in default_chats.split(","):
-            try:
-                chat_id = int(chat_id.strip())
-                add_chat(chat_id)
-                logger.info(f"✅ Автоматически добавлен чат: {chat_id}")
-            except Exception as e:
-                logger.error(f"❌ Ошибка добавления чата {chat_id}: {e}")
-
     # ===== КОМАНДЫ =====
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
@@ -74,8 +63,8 @@ def main():
     app.add_handler(CommandHandler("goodnight", goodnight_command))
     app.add_handler(CommandHandler("reminders", reminders_command))
     app.add_handler(CommandHandler("cancel", cancel_reminder_command))
-    app.add_handler(CommandHandler("subscribe", add_chat))
-    app.add_handler(CommandHandler("unsubscribe", remove_chat))
+    app.add_handler(CommandHandler("subscribe", subscribe_command))
+    app.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
     app.add_handler(CommandHandler("admin", admin_panel))
 
     # ===== ОБРАБОТЧИКИ =====
