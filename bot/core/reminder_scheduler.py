@@ -1,5 +1,5 @@
 """
-Планировщик напоминаний для Сумеречной Искорки.
+Планировщик напоминаний для Сумеречной Искорка.
 Проверяет каждую минуту, не пора ли отправить напоминание.
 
 Автор: MADAO81
@@ -31,7 +31,6 @@ async def check_reminders(app):
         for reminder in due_reminders:
             try:
                 user_id = reminder['user_id']
-                chat_id = reminder['chat_id']
                 text = reminder['text']
                 reminder_id = reminder['id']
                 is_recurring = reminder['is_recurring']
