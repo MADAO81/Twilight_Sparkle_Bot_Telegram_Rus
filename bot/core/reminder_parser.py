@@ -1,9 +1,9 @@
 """
 Парсер напоминаний для Сумеречной Искорки.
-Поддерживает ключевые слова "личное" и "групповое".
+Поддерживает личные и групповые, а также ежемесячные повторения.
 
 Автор: MADAO81
-Версия: 2.0 — поддержка типов напоминаний
+Версия: 2.1 — поддержка ежемесячных напоминаний (каждого числа)
 """
 
 import re
@@ -35,7 +35,7 @@ class ReminderParser:
                 break
 
         # Определяем тип: личное или групповое
-        is_private = True  # По умолчанию личное
+        is_private = True
         if "групповое" in text_for_search or "в группу" in text_for_search or "для всех" in text_for_search:
             is_private = False
             text_for_search = text_for_search.replace("групповое", "").replace("в группу", "").replace("для всех", "").strip()
@@ -43,7 +43,7 @@ class ReminderParser:
             is_private = True
             text_for_search = text_for_search.replace("личное", "").replace("в личку", "").replace("только мне", "").strip()
 
-        # Убираем "пожалуйста", "плиз", "пж" и запятые
+        # Убираем вежливые слова и запятые
         text_for_search = text_for_search.replace("пожалуйста", "").strip()
         text_for_search = text_for_search.replace("плиз", "").strip()
         text_for_search = text_for_search.replace("пж", "").strip()
@@ -53,6 +53,7 @@ class ReminderParser:
         # Проверяем на повторяющиеся
         is_recurring = False
         recurring_type = None
+        recurring_day = None  # Для ежемесячных
 
         if "каждый день" in text_for_search or "ежедневно" in text_for_search:
             is_recurring = True
@@ -66,6 +67,15 @@ class ReminderParser:
             is_recurring = True
             recurring_type = "monthly"
             text_for_search = text_for_search.replace("каждый месяц", "").replace("ежемесячно", "").strip()
+
+        # --- ПАРСИНГ ЕЖЕМЕСЯЧНОГО ЧИСЛА ---
+        # Ищем "20 числа каждого месяца"
+        monthly_match = re.search(r'(\d{1,2})\s+числа\s+каждого\s+месяца', text_for_search)
+        if monthly_match:
+            recurring_day = int(monthly_match.group(1))
+            is_recurring = True
+            recurring_type = "monthly"
+            text_for_search = text_for_search.replace(monthly_match.group(0), "").strip()
 
         # --- ПАРСИНГ ДАТЫ ---
         remind_at = None
@@ -102,7 +112,28 @@ class ReminderParser:
                 remind_at = datetime(year, month, day, hour, minute, 0, 0)
                 matched_text = match.group(0)
 
-        # 4. "17-07-2026 в 19-10"
+        # 4. "20 числа" (без месяца — ставим текущий месяц)
+        if not remind_at:
+            match = re.search(r'(\d{1,2})\s+числа\s+в\s+(\d{1,2})\s*[:.-]\s*(\d{2})', text_for_search)
+            if match:
+                day = int(match.group(1))
+                hour = int(match.group(2))
+                minute = int(match.group(3))
+                now = datetime.now()
+                # Если день уже прошёл в этом месяце — берём следующий
+                if day < now.day:
+                    month = now.month + 1
+                    year = now.year
+                    if month > 12:
+                        month = 1
+                        year += 1
+                else:
+                    month = now.month
+                    year = now.year
+                remind_at = datetime(year, month, day, hour, minute, 0, 0)
+                matched_text = match.group(0)
+
+        # 5. "17-07-2026 в 19-10"
         if not remind_at:
             match = re.search(r'(\d{1,2})[-./](\d{1,2})[-./](\d{4})\s+в\s+(\d{1,2})\s*[:.-]\s*(\d{2})', text_for_search)
             if match:
@@ -114,7 +145,7 @@ class ReminderParser:
                 remind_at = datetime(year, month, day, hour, minute, 0, 0)
                 matched_text = match.group(0)
 
-        # 5. "17.07 в 19-10"
+        # 6. "17.07 в 19-10"
         if not remind_at:
             match = re.search(r'(\d{1,2})[-./](\d{1,2})\s+в\s+(\d{1,2})\s*[:.-]\s*(\d{2})', text_for_search)
             if match:
@@ -126,7 +157,7 @@ class ReminderParser:
                 remind_at = datetime(year, month, day, hour, minute, 0, 0)
                 matched_text = match.group(0)
 
-        # 6. Просто "в 19-10" (сегодня)
+        # 7. Просто "в 19-10" (сегодня)
         if not remind_at:
             match = re.search(r'в\s+(\d{1,2})\s*[:.-]\s*(\d{2})', text_for_search)
             if match:
@@ -138,6 +169,11 @@ class ReminderParser:
 
         if remind_at is None:
             return None
+
+        # Если это ежемесячное напоминание, корректируем дату
+        if recurring_type == "monthly" and recurring_day:
+            # Заменяем день на указанный
+            remind_at = remind_at.replace(day=recurring_day)
 
         # Убираем дату и время из текста
         if matched_text:
