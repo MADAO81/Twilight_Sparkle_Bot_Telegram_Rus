@@ -3,7 +3,7 @@
 Поддерживает личные и групповые, а также ежемесячные повторения.
 
 Автор: MADAO81
-Версия: 2.1 — поддержка ежемесячных напоминаний (каждого числа)
+Версия: 2.2 — поддержка '20-го числа'
 """
 
 import re
@@ -69,8 +69,8 @@ class ReminderParser:
             text_for_search = text_for_search.replace("каждый месяц", "").replace("ежемесячно", "").strip()
 
         # --- ПАРСИНГ ЕЖЕМЕСЯЧНОГО ЧИСЛА ---
-        # Ищем "20 числа каждого месяца"
-        monthly_match = re.search(r'(\d{1,2})\s+числа\s+каждого\s+месяца', text_for_search)
+        # Ищем "20-го числа каждого месяца" или "20 числа каждого месяца"
+        monthly_match = re.search(r'(\d{1,2})[-]?го?\s+числа\s+каждого\s+месяца', text_for_search)
         if monthly_match:
             recurring_day = int(monthly_match.group(1))
             is_recurring = True
@@ -112,9 +112,9 @@ class ReminderParser:
                 remind_at = datetime(year, month, day, hour, minute, 0, 0)
                 matched_text = match.group(0)
 
-        # 4. "20 числа" (без месяца — ставим текущий месяц)
+        # 4. "20-го числа" или "20 числа" (без месяца — ставим текущий месяц)
         if not remind_at:
-            match = re.search(r'(\d{1,2})\s+числа\s+в\s+(\d{1,2})\s*[:.-]\s*(\d{2})', text_for_search)
+            match = re.search(r'(\d{1,2})[-]?го?\s+числа\s+в\s+(\d{1,2})\s*[:.-]\s*(\d{2})', text_for_search)
             if match:
                 day = int(match.group(1))
                 hour = int(match.group(2))

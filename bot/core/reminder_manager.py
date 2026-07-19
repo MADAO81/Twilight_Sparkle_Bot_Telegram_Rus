@@ -3,7 +3,7 @@
 Поддерживает личные и групповые напоминания.
 
 Автор: MADAO81
-Версия: 2.0 — разделение на личные и групповые
+Версия: 2.3 — умный поиск с нормализацией текста
 """
 
 import sqlite3
@@ -44,7 +44,6 @@ class ReminderManager:
     def add_reminder(self, user_id: int, chat_id: int, text: str, remind_at: datetime,
                      is_recurring: bool = False, recurring_type: Optional[str] = None,
                      is_private: bool = False) -> int:
-        """Добавляет напоминание."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("""
@@ -57,7 +56,6 @@ class ReminderManager:
         return reminder_id
 
     def get_due_reminders(self) -> List[Dict]:
-        """Получает все активные напоминания, время которых наступило."""
         now = datetime.now()
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
@@ -72,7 +70,6 @@ class ReminderManager:
         return [dict(row) for row in rows]
 
     def mark_sent(self, reminder_id: int) -> bool:
-        """Отмечает напоминание как отправленное."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("UPDATE reminders SET is_active = 0 WHERE id = ?", (reminder_id,))
@@ -82,7 +79,6 @@ class ReminderManager:
         return affected > 0
 
     def reschedule_recurring(self, reminder_id: int, recurring_type: str) -> bool:
-        """Переносит повторяющееся напоминание."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("SELECT remind_at FROM reminders WHERE id = ?", (reminder_id,))
@@ -107,17 +103,11 @@ class ReminderManager:
         return affected > 0
 
     def get_user_reminders(self, user_id: int, chat_id: Optional[int] = None) -> List[Dict]:
-        """
-        Получает напоминания пользователя.
-        - Личные: только для этого пользователя
-        - Групповые: для всех участников группы
-        """
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
         if chat_id:
-            # Для группы: личные пользователя + все групповые
             cursor.execute("""
                 SELECT id, text, remind_at, is_recurring, recurring_type, is_private, chat_id
                 FROM reminders
@@ -129,7 +119,6 @@ class ReminderManager:
                 ORDER BY remind_at ASC
             """, (user_id, chat_id))
         else:
-            # Для лички: только личные
             cursor.execute("""
                 SELECT id, text, remind_at, is_recurring, recurring_type, is_private
                 FROM reminders
@@ -141,27 +130,67 @@ class ReminderManager:
         conn.close()
         return [dict(row) for row in rows]
 
+    def _normalize(self, text: str) -> str:
+        """Нормализует текст для поиска: убирает мягкий знак, приводит к нижнему регистру."""
+        text = text.lower()
+        # Убираем мягкий знак
+        text = text.replace("ь", "")
+        # Убираем @упоминания
+        text = text.replace("@twilightsparklerusbot", "").replace("@twilight_sparkle_rus_bot", "")
+        # Убираем лишние пробелы
+        text = " ".join(text.split())
+        return text
+
     def cancel_reminder_by_text(self, user_id: int, text_contains: str, chat_id: Optional[int] = None) -> bool:
-        """Отменяет напоминание по части текста."""
+        """Отменяет напоминание по части текста (умный поиск с нормализацией)."""
+        clean_query = self._normalize(text_contains)
+        keywords = [w for w in clean_query.split() if len(w) > 2]
+
+        if not keywords:
+            return False
+
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
+        # Получаем все активные напоминания пользователя
         if chat_id:
             cursor.execute("""
-                UPDATE reminders SET is_active = 0
-                WHERE user_id = ? AND text LIKE ? AND is_active = 1
+                SELECT id, text FROM reminders
+                WHERE user_id = ? 
+                AND is_active = 1
                 AND (
                     (is_private = 1 AND user_id = ?)
                     OR (is_private = 0 AND chat_id = ?)
                 )
-                LIMIT 1
-            """, (user_id, f"%{text_contains}%", user_id, chat_id))
+            """, (user_id, user_id, chat_id))
         else:
             cursor.execute("""
-                UPDATE reminders SET is_active = 0
-                WHERE user_id = ? AND text LIKE ? AND is_active = 1 AND is_private = 1
-                LIMIT 1
-            """, (user_id, f"%{text_contains}%"))
+                SELECT id, text FROM reminders
+                WHERE user_id = ? 
+                AND is_active = 1
+                AND is_private = 1
+            """, (user_id,))
+
+        rows = cursor.fetchall()
+        if not rows:
+            conn.close()
+            return False
+
+        # Ищем совпадения по нормализованному тексту
+        found_ids = []
+        for reminder_id, text in rows:
+            normalized_text = self._normalize(text)
+            # Проверяем, содержит ли нормализованный текст все ключевые слова
+            if all(kw in normalized_text for kw in keywords):
+                found_ids.append(reminder_id)
+
+        if not found_ids:
+            conn.close()
+            return False
+
+        # Удаляем все найденные
+        placeholders = ", ".join(["?" for _ in found_ids])
+        cursor.execute(f"UPDATE reminders SET is_active = 0 WHERE id IN ({placeholders})", found_ids)
 
         affected = cursor.rowcount
         conn.commit()

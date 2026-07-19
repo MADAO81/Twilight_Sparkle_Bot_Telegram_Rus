@@ -4,12 +4,12 @@
 Поддерживает личные и групповые напоминания.
 
 Автор: MADAO81
-Версия: 2.0
+Версия: 2.4 — полная диагностика
 """
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import ContextTypes
 from bot.services.ai_service import get_twilight_response
@@ -29,6 +29,8 @@ reminder_parser = ReminderParser()
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка текстовых сообщений."""
+    logger.info(f"🔥 handle_message ВЫЗВАНА!")
+
     if not is_working_hours():
         if update.message.chat.type == "private":
             await update.message.reply_text(get_working_status_message())
@@ -36,44 +38,88 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # === ПРОВЕРКА: нужно ли реагировать ===
     if update.message.chat.type == "private":
-        pass  # В ЛС отвечаем всегда
+        logger.info("📩 Сообщение в личке — отвечаем всегда")
     else:
         bot_username = context.bot.username
+        message_text = update.message.text or ""
+
+        logger.info(f"📩 Групповое сообщение: '{message_text[:50]}...'")
+        logger.info(f"🔍 bot_username = '{bot_username}'")
+
         is_mentioned = False
 
-        if update.message.text and f"@{bot_username}" in update.message.text.lower():
+        if f"@{bot_username}" in message_text.lower():
             is_mentioned = True
+            logger.info("✅ Найдено упоминание @username")
+
+        bot_name_no_underscore = bot_username.replace("_", "")
+        if f"@{bot_name_no_underscore}" in message_text.lower():
+            is_mentioned = True
+            logger.info("✅ Найдено упоминание без подчёркиваний")
 
         if update.message.reply_to_message:
             if update.message.reply_to_message.from_user.username == bot_username:
                 is_mentioned = True
+                logger.info("✅ Ответ на сообщение бота")
 
         if not is_mentioned:
-            logger.info(f"⏭️ Пропускаем сообщение в группе")
+            logger.info(f"⏭️ Пропускаем сообщение в группе (нет упоминания)")
             return
 
     status_message = await update.message.reply_text("💭 Думаю...")
 
     try:
         user_id = update.effective_user.id
-        user_message = update.message.text
+        user_message = update.message.text or ""
 
-        # ========== ПРОВЕРКА НА НАПОМИНАНИЕ ==========
-        reminder_keywords = ["напомни", "напоминание", "напомнить", "запомни"]
-        if any(keyword in user_message.lower() for keyword in reminder_keywords):
-            parsed = reminder_parser.parse_reminder(user_message)
-            if parsed:
-                text, remind_at, is_recurring, recurring_type, is_private = parsed
+        logger.info(f"📩 Обработка сообщения от {user_id}: {user_message[:50]}...")
 
-                # Проверяем, что время не в прошлом
-                if remind_at < datetime.now():
-                    await status_message.delete()
+        # ========== ПРОВЕРКА НА ОТМЕНУ НАПОМИНАНИЯ ==========
+        cancel_keywords = ["отмени напоминание", "удали напоминание", "отмени"]
+        if any(keyword in user_message.lower() for keyword in cancel_keywords):
+            logger.info("🔍 Обнаружена команда отмены")
+            query = user_message
+            for kw in cancel_keywords:
+                query = query.lower().replace(kw, "").strip()
+            if query:
+                chat_id = update.message.chat_id if update.message.chat.type != "private" else None
+                logger.info(f"🔍 Отмена: user_id={user_id}, query='{query}', chat_id={chat_id}")
+                success = reminder_manager.cancel_reminder_by_text(user_id, query, chat_id)
+                await status_message.delete()
+                if success:
                     await update.message.reply_text(
-                        "😅 *Ой!* Ты просишь напомнить в прошлом!\n\n"
-                        "Я не могу отправить напоминание в прошлое. Попробуй указать будущую дату и время! 📚",
+                        f"✅ *Напоминания отменены!*\n\n"
+                        f"По запросу: _{query}_\n\n"
+                        f"Все подходящие напоминания удалены. 📚",
                         parse_mode="Markdown"
                     )
-                    return
+                else:
+                    await update.message.reply_text(
+                        f"❌ Не нашла напоминаний по запросу: _{query}_\n\n"
+                        "Проверь список командой /reminders",
+                        parse_mode="Markdown"
+                    )
+                return
+
+        # ========== ПРОВЕРКА НА СОЗДАНИЕ НАПОМИНАНИЯ ==========
+        reminder_keywords = ["напомни", "напоминание", "напомнить", "запомни"]
+        if any(keyword in user_message.lower() for keyword in reminder_keywords):
+            logger.info("🔍 Обнаружена команда создания напоминания")
+            parsed = reminder_parser.parse_reminder(user_message)
+            logger.info(f"🔍 Результат парсинга: {parsed}")
+            if parsed:
+                text, remind_at, is_recurring, recurring_type, is_private = parsed
+                logger.info(f"🔍 Распарсено: text='{text}', remind_at={remind_at}, recurring={is_recurring}")
+
+                # Если время уже прошло сегодня — переносим на завтра
+                if remind_at < datetime.now():
+                    remind_at = remind_at + timedelta(days=1)
+                    await update.message.reply_text(
+                        f"⏰ *Время уже прошло, поэтому я перенесла напоминание на завтра!*\n"
+                        f"🕐 Новая дата: {remind_at.strftime('%d.%m.%Y в %H:%M')}\n\n"
+                        f"Продолжаем? 💜",
+                        parse_mode="Markdown"
+                    )
 
                 reminder_id = reminder_manager.add_reminder(
                     user_id=user_id,
@@ -85,9 +131,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     is_private=is_private
                 )
 
+                logger.info(f"✅ Напоминание #{reminder_id} создано")
+
                 await status_message.delete()
 
-                # Формируем сообщение о принятии напоминания
                 type_label = "🔒 Личное" if is_private else "📢 Групповое"
                 type_desc = "в личку" if is_private else f"в группу {update.message.chat.title or 'эту группу'}"
 
@@ -125,35 +172,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-        # ========== ПРОВЕРКА НА ОТМЕНУ НАПОМИНАНИЯ ==========
-        cancel_keywords = ["отмени напоминание", "удали напоминание", "отмени"]
-        if any(keyword in user_message.lower() for keyword in cancel_keywords):
-            query = user_message
-            for kw in cancel_keywords:
-                query = query.lower().replace(kw, "").strip()
-            if query:
-                chat_id = update.message.chat_id if update.message.chat.type != "private" else None
-                success = reminder_manager.cancel_reminder_by_text(user_id, query, chat_id)
-                await status_message.delete()
-                if success:
-                    await update.message.reply_text(
-                        f"✅ *Напоминание отменено!*\n\n"
-                        f"Текст: _{query}_",
-                        parse_mode="Markdown"
-                    )
-                else:
-                    await update.message.reply_text(
-                        f"❌ Не нашла напоминание с текстом: _{query}_\n\n"
-                        "Проверь список командой /reminders",
-                        parse_mode="Markdown"
-                    )
-                return
-
         # ========== ПРОВЕРКА НА ЗАПРОС ПОГОДЫ ==========
         weather_keywords = ["погода", "weather", "за окном", "температура", "дождь", "солнце", "градус", "ветер", "холодно", "тепло", "метео"]
         is_weather_query = any(keyword in user_message.lower() for keyword in weather_keywords)
 
         if is_weather_query:
+            logger.info("🔍 Обнаружен запрос погоды")
             patterns = [
                 r'во\s+([А-Яа-яA-Za-z\s\-]+?)(?:\s|,|\.|$|\))',
                 r'в\s+([А-Яа-яA-Za-z\s\-]+?)(?:\s|,|\.|$|\))',
@@ -191,6 +215,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # ========== ОБЫЧНЫЙ ОТВЕТ ==========
+        logger.info("🔍 Обычный запрос, отправляем в OpenAI")
         context_history = context_manager.get_context(user_id)
 
         response = await get_twilight_response(
