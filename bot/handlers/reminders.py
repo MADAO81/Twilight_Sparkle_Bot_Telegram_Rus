@@ -1,10 +1,9 @@
-# bot/handlers/reminders.py
 """
 Обработчики команд напоминаний для бота Сумеречная Искорка.
 Команды: /reminders, /cancel
 
 Автор: MADAO81
-Версия: 1.0
+Версия: 2.0 — поддержка личных и групповых
 """
 
 import logging
@@ -26,15 +25,17 @@ async def reminders_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user_id = update.effective_user.id
-    reminders = reminder_manager.get_user_reminders(user_id)
+    chat_id = update.message.chat_id if update.message.chat.type != "private" else None
+
+    reminders = reminder_manager.get_user_reminders(user_id, chat_id)
 
     if not reminders:
         await update.message.reply_text(
             "📋 *У тебя нет активных напоминаний!*\n\n"
-            "Чтобы создать напоминание, просто напиши:\n"
+            "Чтобы создать напоминание, напиши:\n"
             "`напомни 15 июля в 14:00 позвонить клиенту`\n\n"
-            "Или:\n"
-            "`напомни через 3 дня сдать отчёт`",
+            "А чтобы создать групповое напоминание, добавь слово 'групповое':\n"
+            "`напомни групповое завтра в 10:00 провести встречу`",
             parse_mode="Markdown"
         )
         return
@@ -42,14 +43,30 @@ async def reminders_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = "📋 *Твои активные напоминания:*\n\n"
     for i, reminder in enumerate(reminders, 1):
         remind_at = reminder['remind_at']
-        text += f"{i}. 🕐 {remind_at} — {reminder['text']}\n"
-        if reminder['is_recurring']:
+        is_private = reminder.get('is_private', True)
+        type_label = "🔒 Личное" if is_private else "📢 Групповое"
+        chat_display = f"(в группе)" if not is_private else ""
+        text += f"{i}. {type_label} {chat_display} 🕐 {remind_at} — {reminder['text']}\n"
+        if reminder.get('is_recurring'):
             text += f"   🔄 Повтор: {reminder['recurring_type']}\n"
 
     text += f"\n*Итого:* {len(reminders)} напоминаний"
     text += "\n\n❌ Чтобы отменить, напиши: `отмени напоминание про ...`"
 
-    await update.message.reply_text(text, parse_mode="Markdown")
+    # Если пользователь в группе и есть личные напоминания — дублируем в личку
+    if chat_id and any(r.get('is_private', True) for r in reminders):
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=text,
+                parse_mode="Markdown"
+            )
+            await update.message.reply_text("📬 *Я отправила тебе список твоих напоминаний в личку!* 📚")
+        except Exception as e:
+            logger.error(f"❌ Не удалось отправить в личку: {e}")
+            await update.message.reply_text(text, parse_mode="Markdown")
+    else:
+        await update.message.reply_text(text, parse_mode="Markdown")
 
 
 async def cancel_reminder_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -65,15 +82,17 @@ async def cancel_reminder_command(update: Update, context: ContextTypes.DEFAULT_
             "❌ *Как отменить напоминание:*\n\n"
             "Напиши: `/cancel текст напоминания`\n\n"
             "Или просто напиши в чат:\n"
-            "`отмени напоминание про отчёт`",
+            "`отмени напоминание про отчёт`\n\n"
+            "Ты можешь отменить только свои личные и групповые напоминания.",
             parse_mode="Markdown"
         )
         return
 
     user_id = update.effective_user.id
+    chat_id = update.message.chat_id if update.message.chat.type != "private" else None
     query = " ".join(args)
 
-    success = reminder_manager.cancel_reminder_by_text(user_id, query)
+    success = reminder_manager.cancel_reminder_by_text(user_id, query, chat_id)
 
     if success:
         await update.message.reply_text(

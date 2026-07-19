@@ -1,9 +1,9 @@
 """
 Парсер напоминаний для Сумеречной Искорки.
-Извлекает дату, время и текст из сообщений пользователя.
+Поддерживает ключевые слова "личное" и "групповое".
 
 Автор: MADAO81
-Версия: 1.3 — улучшенная обработка запятых и вежливых слов
+Версия: 2.0 — поддержка типов напоминаний
 """
 
 import re
@@ -12,20 +12,13 @@ from typing import Optional, Tuple
 
 
 class ReminderParser:
-    """
-    Парсит сообщения пользователя и извлекает:
-    - дату и время
-    - текст напоминания
-    - тип повторения (если есть)
-    """
-
     @staticmethod
-    def parse_reminder(text: str) -> Optional[Tuple[str, datetime, bool, Optional[str]]]:
+    def parse_reminder(text: str) -> Optional[Tuple[str, datetime, bool, Optional[str], bool]]:
         """
         Извлекает из текста напоминание.
 
         Returns:
-            Tuple: (текст_напоминания, datetime, is_recurring, recurring_type)
+            Tuple: (текст, datetime, is_recurring, recurring_type, is_private)
             или None, если не удалось распарсить
         """
         original_text = text
@@ -35,11 +28,20 @@ class ReminderParser:
         if not any(word in text_for_search for word in ["напомни", "напоминание", "напомнить", "запомни"]):
             return None
 
-        # Убираем ключевые слова в начале
+        # Убираем ключевые слова
         for word in ["напомни", "напоминание", "напомнить", "запомни"]:
             if text_for_search.startswith(word):
                 text_for_search = text_for_search[len(word):].strip()
                 break
+
+        # Определяем тип: личное или групповое
+        is_private = True  # По умолчанию личное
+        if "групповое" in text_for_search or "в группу" in text_for_search or "для всех" in text_for_search:
+            is_private = False
+            text_for_search = text_for_search.replace("групповое", "").replace("в группу", "").replace("для всех", "").strip()
+        elif "личное" in text_for_search or "в личку" in text_for_search or "только мне" in text_for_search:
+            is_private = True
+            text_for_search = text_for_search.replace("личное", "").replace("в личку", "").replace("только мне", "").strip()
 
         # Убираем "пожалуйста", "плиз", "пж" и запятые
         text_for_search = text_for_search.replace("пожалуйста", "").strip()
@@ -65,39 +67,7 @@ class ReminderParser:
             recurring_type = "monthly"
             text_for_search = text_for_search.replace("каждый месяц", "").replace("ежемесячно", "").strip()
 
-        # --- ПАРСИНГ "ЧЕРЕЗ N ..." ---
-        through_match = re.search(r'через\s+(\d+)\s+(дней|день|дня|часов|час|часа|минут|минуты|минуту)', text_for_search)
-        if through_match:
-            number = int(through_match.group(1))
-            unit = through_match.group(2)
-
-            if "день" in unit or "дней" in unit:
-                remind_at = datetime.now() + timedelta(days=number)
-            elif "час" in unit:
-                remind_at = datetime.now() + timedelta(hours=number)
-            elif "минут" in unit:
-                remind_at = datetime.now() + timedelta(minutes=number)
-            else:
-                remind_at = datetime.now() + timedelta(days=number)
-
-            text_for_search = re.sub(r'через\s+\d+\s+(дней|день|дня|часов|час|часа|минут|минуты|минуту)', '', text_for_search).strip()
-
-            # Проверяем время
-            time_match = re.search(r'в\s+(\d{1,2})\s*[:.-]\s*(\d{2})', text_for_search)
-            if time_match:
-                hour = int(time_match.group(1))
-                minute = int(time_match.group(2))
-                remind_at = remind_at.replace(hour=hour, minute=minute, second=0, microsecond=0)
-                text_for_search = re.sub(r'в\s+\d{1,2}\s*[:.-]\s*\d{2}', '', text_for_search).strip()
-
-            # Убираем лишние слова
-            text_for_search = re.sub(r'^[,，、\s]+', '', text_for_search)
-            if not text_for_search:
-                text_for_search = "Напоминание"
-
-            return text_for_search, remind_at, is_recurring, recurring_type
-
-        # --- ПАРСИНГ ДАТЫ (НОВЫЙ — ИЩЕМ В ЛЮБОМ МЕСТЕ) ---
+        # --- ПАРСИНГ ДАТЫ ---
         remind_at = None
         matched_text = ""
 
@@ -179,11 +149,10 @@ class ReminderParser:
         if not text_for_search:
             text_for_search = "Напоминание"
 
-        return text_for_search, remind_at, is_recurring, recurring_type
+        return text_for_search, remind_at, is_recurring, recurring_type, is_private
 
     @staticmethod
     def _month_to_number(month_name: str) -> int:
-        """Переводит название месяца в число."""
         months = {
             "января": 1, "февраля": 2, "марта": 3, "апреля": 4,
             "мая": 5, "июня": 6, "июля": 7, "августа": 8,

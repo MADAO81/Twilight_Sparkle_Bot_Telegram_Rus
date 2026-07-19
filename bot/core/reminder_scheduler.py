@@ -1,3 +1,11 @@
+"""
+Планировщик напоминаний для Сумеречной Искорка.
+Отправляет личные — в личку, групповые — в группу.
+
+Автор: MADAO81
+Версия: 2.0 — разделение на личные и групповые
+"""
+
 import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -19,13 +27,14 @@ async def check_reminders(app):
 
         for reminder in due_reminders:
             try:
-                user_id = reminder['user_id']  # Отправляем в личку пользователя
+                user_id = reminder['user_id']
+                chat_id = reminder['chat_id']
                 text = reminder['text']
                 reminder_id = reminder['id']
+                is_private = reminder['is_private']
                 is_recurring = reminder['is_recurring']
                 recurring_type = reminder.get('recurring_type')
 
-                # Очищаем текст от @упоминаний бота
                 clean_text = text.replace("@twilight_sparkle_rus_bot", "").strip()
 
                 response = (
@@ -35,13 +44,23 @@ async def check_reminders(app):
                     f"💪 Я верю в тебя — ты справишься! 📖✨"
                 )
 
-                await app.bot.send_message(
-                    chat_id=user_id,  # Отправляем в личку
-                    text=response,
-                    parse_mode="Markdown"
-                )
-
-                logger.info(f"✅ Отправлено напоминание #{reminder_id} пользователю {user_id}")
+                # Определяем куда отправлять
+                if is_private:
+                    # Личное — в личку пользователю
+                    await app.bot.send_message(
+                        chat_id=user_id,
+                        text=response,
+                        parse_mode="Markdown"
+                    )
+                    logger.info(f"✅ Личное напоминание #{reminder_id} отправлено пользователю {user_id}")
+                else:
+                    # Групповое — в группу
+                    await app.bot.send_message(
+                        chat_id=chat_id,
+                        text=response,
+                        parse_mode="Markdown"
+                    )
+                    logger.info(f"✅ Групповое напоминание #{reminder_id} отправлено в чат {chat_id}")
 
                 if is_recurring and recurring_type:
                     reminder_manager.reschedule_recurring(reminder_id, recurring_type)

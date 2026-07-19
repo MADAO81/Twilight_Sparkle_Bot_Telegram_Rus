@@ -1,13 +1,15 @@
 """
 Обработчик текстовых сообщений для бота Сумеречная Искорка.
 Реагирует на упоминания, распознаёт напоминания и погоду.
+Поддерживает личные и групповые напоминания.
 
 Автор: MADAO81
-Версия: 1.0
+Версия: 2.0
 """
 
 import logging
 import re
+from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
 from bot.services.ai_service import get_twilight_response
@@ -61,24 +63,53 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if any(keyword in user_message.lower() for keyword in reminder_keywords):
             parsed = reminder_parser.parse_reminder(user_message)
             if parsed:
-                text, remind_at, is_recurring, recurring_type = parsed
+                text, remind_at, is_recurring, recurring_type, is_private = parsed
+
+                # Проверяем, что время не в прошлом
+                if remind_at < datetime.now():
+                    await status_message.delete()
+                    await update.message.reply_text(
+                        "😅 *Ой!* Ты просишь напомнить в прошлом!\n\n"
+                        "Я не могу отправить напоминание в прошлое. Попробуй указать будущую дату и время! 📚",
+                        parse_mode="Markdown"
+                    )
+                    return
+
                 reminder_id = reminder_manager.add_reminder(
                     user_id=user_id,
                     chat_id=update.message.chat_id,
                     text=text,
                     remind_at=remind_at,
                     is_recurring=is_recurring,
-                    recurring_type=recurring_type
+                    recurring_type=recurring_type,
+                    is_private=is_private
                 )
+
                 await status_message.delete()
-                await update.message.reply_text(
+
+                # Формируем сообщение о принятии напоминания
+                type_label = "🔒 Личное" if is_private else "📢 Групповое"
+                type_desc = "в личку" if is_private else f"в группу {update.message.chat.title or 'эту группу'}"
+
+                confirm_text = (
                     f"✅ *Напоминание сохранено!*\n\n"
+                    f"📌 *Тип:* {type_label} (придёт {type_desc})\n"
                     f"📌 *Текст:* {text}\n"
                     f"🕐 *Время:* {remind_at.strftime('%d.%m.%Y в %H:%M')}\n"
-                    f"{'🔄 Повтор: ' + recurring_type if is_recurring else ''}\n\n"
-                    "Я напомню тебе вовремя! 📚",
-                    parse_mode="Markdown"
                 )
+
+                if is_recurring:
+                    confirm_text += f"🔄 *Повтор:* "
+                    if recurring_type == "daily":
+                        confirm_text += "ежедневно\n"
+                    elif recurring_type == "weekly":
+                        confirm_text += "еженедельно\n"
+                    elif recurring_type == "monthly":
+                        confirm_text += "ежемесячно\n"
+
+                confirm_text += f"\n📚 Я напомню тебе вовремя! Не волнуйся, всё будет под контролем! 💜"
+
+                await update.message.reply_text(confirm_text, parse_mode="Markdown")
                 return
             else:
                 await status_message.delete()
@@ -87,7 +118,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Попробуй так:\n"
                     "`напомни 15 июля в 14:00 позвонить клиенту`\n"
                     "или\n"
-                    "`напомни через 3 дня сдать отчёт`",
+                    "`напомни через 3 дня сдать отчёт`\n\n"
+                    "Чтобы создать групповое напоминание, добавь слово 'групповое':\n"
+                    "`напомни групповое завтра в 10:00 провести встречу`",
                     parse_mode="Markdown"
                 )
                 return
@@ -99,7 +132,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for kw in cancel_keywords:
                 query = query.lower().replace(kw, "").strip()
             if query:
-                success = reminder_manager.cancel_reminder_by_text(user_id, query)
+                chat_id = update.message.chat_id if update.message.chat.type != "private" else None
+                success = reminder_manager.cancel_reminder_by_text(user_id, query, chat_id)
                 await status_message.delete()
                 if success:
                     await update.message.reply_text(
