@@ -2,10 +2,10 @@
 
 > 📚 Умный и заботливый бот Сумеречная Искорка из Понивилля в Telegram
 
-![Python Version](https://shields.io)
-![License](https://shields.io)
-![Platform](https://shields.io)
-![AI](https://shields.io)
+![Python Version](https://img.shields.io/badge/python-3.11-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Platform](https://img.shields.io/badge/platform-Telegram-blue)
+![AI](https://img.shields.io/badge/AI-OpenAI%20GPT--4--turbo-orange)
 
 > **Статус:** ✅ **Готов к использованию**
 >
