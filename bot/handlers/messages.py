@@ -4,7 +4,7 @@
 Поддерживает личные и групповые напоминания.
 
 Автор: MADAO81
-Версия: 2.7 — исправлена ошибка Markdown
+Версия: 2.8 — исправлен порядок проверок
 """
 
 import logging
@@ -68,8 +68,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         logger.info(f"📩 Обработка сообщения от {user_id}: {user_message[:50]}...")
 
-        # ========== ПРОВЕРКА НА СОЗДАНИЕ НАПОМИНАНИЯ ==========
-        reminder_keywords = ["напомни", "напоминание", "напомнить", "запомни"]
+        # ========== ПРОВЕРКА НА СОЗДАНИЕ НАПОМИНАНИЯ (СНАЧАЛА!) ==========
+        reminder_keywords = ["напомни", "напоминание", "напомнить", "запомни", "групповое"]
         if any(keyword in user_message.lower() for keyword in reminder_keywords):
             logger.info("🔍 Обнаружена команда создания напоминания")
             parsed = reminder_parser.parse_reminder(user_message)
@@ -155,6 +155,47 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"❌ Не нашла напоминаний по запросу: {query}\n\nПроверь список командой /reminders"
                     )
                 return
+
+        # ========== ПРОВЕРКА НА ЗАПРОС ПОГОДЫ ==========
+        weather_keywords = ["погода", "weather", "за окном", "температура", "дождь", "солнце", "градус", "ветер", "холодно", "тепло", "метео"]
+        is_weather_query = any(keyword in user_message.lower() for keyword in weather_keywords)
+
+        if is_weather_query:
+            logger.info("🔍 Обнаружен запрос погоды")
+            patterns = [
+                r'во\s+([А-Яа-яA-Za-z\s\-]+?)(?:\s|,|\.|$|\))',
+                r'в\s+([А-Яа-яA-Za-z\s\-]+?)(?:\s|,|\.|$|\))',
+                r'погода\s+во\s+([А-Яа-яA-Za-z\s\-]+?)(?:\s|,|\.|$|\))',
+                r'погода\s+в\s+([А-Яа-яA-Za-z\s\-]+?)(?:\s|,|\.|$|\))',
+                r'погода\s+([А-Яа-яA-Za-z\s\-]+?)(?:\s|,|\.|$|\))',
+                r'weather\s+in\s+([A-Za-z\s\-]+?)(?:\s|,|\.|$|\))',
+            ]
+
+            city_found = None
+            for pattern in patterns:
+                match = re.search(pattern, user_message, re.IGNORECASE)
+                if match:
+                    city_found = match.group(1).strip()
+                    break
+
+            if city_found and city_found.lower() not in ["ворсино", "боровск"]:
+                weather = await weather_service.get_weather_by_city(city_found)
+                if weather:
+                    weather_text = weather_service.get_weather_text(weather, city_found)
+                    response = f"🌤️ Погода в {city_found}\n\n{weather_text}"
+                else:
+                    response = f"😅 Не могу найти город '{city_found}'! 🌧️"
+            else:
+                weather = await weather_service.get_weather()
+                if weather:
+                    weather_text = weather_service.get_weather_text(weather)
+                    response = f"🌤️ Погода в Ворсино\n\n{weather_text}"
+                else:
+                    response = "😅 Не могу узнать погоду! Попробуй позже! 🌧️"
+
+            await status_message.delete()
+            await update.message.reply_text(response)
+            return
 
         # ========== ОБЫЧНЫЙ ОТВЕТ ==========
         logger.info("🔍 Обычный запрос, отправляем в OpenAI")
