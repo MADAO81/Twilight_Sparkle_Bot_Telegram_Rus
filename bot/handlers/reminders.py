@@ -62,9 +62,48 @@ async def reminders_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=user_id,
                 text=text
             )
-            await update.message.reply_text("📬 Я отправила тебе список твоих напоминаний в личку! 📚")
+            await update.message.reply_text("📬 Я отправила тебе список твоих напоминаний в личку! �"")
         except Exception as e:
             logger.error(f"❌ Не удалось отправить в личку: {e}")
             await update.message.reply_text(text)
     else:
         await update.message.reply_text(text)
+
+async def cancel_reminder_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for /cancel command — отмена напоминания."""
+    if not is_working_hours():
+        if update.message.chat.type == "private":
+            await update.message.reply_text(get_working_status_message())
+        return
+
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "❌ *Как отменить напоминание:*\n\n"
+            "Напиши: `/cancel текст напоминания`\n\n"
+            "Или просто напиши в чат:\n"
+            "`отмени напоминание про отчёт`\n\n"
+            "Ты можешь отменить только свои личные и групповые напоминания.",
+            parse_mode="Markdown"
+        )
+        return
+
+    user_id = update.effective_user.id
+    chat_id = update.message.chat_id if update.message.chat.type != "private" else None
+    query = " ".join(args)
+
+    success = reminder_manager.cancel_reminder_by_text(user_id, query, chat_id)
+
+    if success:
+        await update.message.reply_text(
+            f"✅ *Напоминание отменено!*\n\n"
+            f"Текст: _{query}_\n\n"
+            "Можешь создать новое в любое время! 📚",
+            parse_mode="Markdown"
+        )
+    else:
+        await update.message.reply_text(
+            f"❌ Не нашла напоминание с текстом: _{query}_\n\n"
+            "Проверь список командой /reminders",
+            parse_mode="Markdown"
+        )
