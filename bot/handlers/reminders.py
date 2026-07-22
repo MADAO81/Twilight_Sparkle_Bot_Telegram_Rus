@@ -62,12 +62,13 @@ async def reminders_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=user_id,
                 text=text
             )
-            await update.message.reply_text("📬 Я отправила тебе список твоих напоминаний в личку! �"")
+            await update.message.reply_text("📬 Я отправила тебе список твоих напоминаний в личку! 📚")
         except Exception as e:
             logger.error(f"❌ Не удалось отправить в личку: {e}")
             await update.message.reply_text(text)
     else:
         await update.message.reply_text(text)
+
 
 async def cancel_reminder_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for /cancel command — отмена напоминания."""

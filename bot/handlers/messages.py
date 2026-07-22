@@ -4,7 +4,7 @@
 Поддерживает личные и групповые напоминания.
 
 Автор: MADAO81
-Версия: 2.8 — исправлен порядок проверок
+Версия: 2.9 — исправлен перенос для повторяющихся напоминаний
 """
 
 import logging
@@ -76,9 +76,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"🔍 Результат парсинга: {parsed}")
             if parsed:
                 text, remind_at, is_recurring, recurring_type, is_private = parsed
-                logger.info(f"🔍 Распарсено: text='{text}', remind_at={remind_at}")
+                logger.info(f"🔍 Распарсено: text='{text}', remind_at={remind_at}, recurring={is_recurring}")
 
-                if remind_at < datetime.now():
+                # Если время уже прошло И это НЕ повторяющееся напоминание
+                if remind_at < datetime.now() and not is_recurring:
                     remind_at = remind_at + timedelta(days=1)
                     await update.message.reply_text(
                         f"⏰ Время уже прошло, перенесла на завтра: {remind_at.strftime('%d.%m.%Y в %H:%M')}\nПродолжаем? 💜"

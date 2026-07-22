@@ -3,7 +3,7 @@
 Поддерживает личные и групповые, а также ежемесячные повторения.
 
 Автор: MADAO81
-Версия: 2.3 — исправлено распознавание групповых без "напомни"
+Версия: 2.5 — исправлен перенос для ежемесячных напоминаний
 """
 
 import re
@@ -86,7 +86,6 @@ class ReminderParser:
         remind_at = None
         matched_text = ""
 
-        # ... (остальной код парсинга дат такой же, как в версии 2.2)
         # 1. "сегодня в 19-10"
         match = re.search(r'сегодня\s+в\s+(\d{1,2})\s*[:.-]\s*(\d{2})', text_for_search)
         if match:
@@ -126,15 +125,23 @@ class ReminderParser:
                 hour = int(match.group(2))
                 minute = int(match.group(3))
                 now = datetime.now()
-                if day < now.day:
-                    month = now.month + 1
-                    year = now.year
-                    if month > 12:
-                        month = 1
-                        year += 1
-                else:
+                # Если это ежемесячное напоминание — не переносим на следующий месяц
+                if is_recurring and recurring_type == "monthly":
+                    # Для ежемесячных — просто ставим текущий месяц
                     month = now.month
                     year = now.year
+                else:
+                    # Для разовых — если день уже прошёл, берём следующий месяц
+                    if day < now.day:
+                        if now.month == 12:
+                            month = 1
+                            year = now.year + 1
+                        else:
+                            month = now.month + 1
+                            year = now.year
+                    else:
+                        month = now.month
+                        year = now.year
                 remind_at = datetime(year, month, day, hour, minute, 0, 0)
                 matched_text = match.group(0)
 
