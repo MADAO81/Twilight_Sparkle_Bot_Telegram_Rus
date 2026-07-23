@@ -1,10 +1,9 @@
-cat > bot/core/reminder_parser.py << 'EOF'
 """
 Парсер напоминаний для Сумеречной Искорки.
 Поддерживает личные и групповые, а также ежемесячные повторения.
 
 Автор: MADAO81
-Версия: 2.5 — исправлен перенос для ежемесячных напоминаний
+Версия: 2.8 — исправлен расчёт месяца для ежемесячных напоминаний
 """
 
 import re
@@ -126,13 +125,24 @@ class ReminderParser:
                 hour = int(match.group(2))
                 minute = int(match.group(3))
                 now = datetime.now()
-                # Если это ежемесячное напоминание — не переносим на следующий месяц
+
+                # ===== ОСНОВНАЯ ЛОГИКА ДЛЯ ЕЖЕМЕСЯЧНЫХ =====
+                # Если это ежемесячное напоминание — всегда вычисляем следующий месяц, если день уже прошёл
                 if is_recurring and recurring_type == "monthly":
-                    # Для ежемесячных — просто ставим текущий месяц
-                    month = now.month
-                    year = now.year
+                    # Для ежемесячных — если день уже прошёл, берём следующий месяц
+                    if day < now.day or day == now.day and (hour < now.hour or (hour == now.hour and minute <= now.minute)):
+                        if now.month == 12:
+                            month = 1
+                            year = now.year + 1
+                        else:
+                            month = now.month + 1
+                            year = now.year
+                    else:
+                        month = now.month
+                        year = now.year
+                    remind_at = datetime(year, month, day, hour, minute, 0, 0)
                 else:
-                    # Для разовых — если день уже прошёл, берём следующий месяц
+                    # Для разовых — стандартная логика
                     if day < now.day:
                         if now.month == 12:
                             month = 1
@@ -143,7 +153,8 @@ class ReminderParser:
                     else:
                         month = now.month
                         year = now.year
-                remind_at = datetime(year, month, day, hour, minute, 0, 0)
+                    remind_at = datetime(year, month, day, hour, minute, 0, 0)
+
                 matched_text = match.group(0)
 
         # 5. "17-07-2026 в 19-10"
@@ -183,9 +194,11 @@ class ReminderParser:
         if remind_at is None:
             return None
 
+        # Если это ежемесячное напоминание — фиксируем день
         if recurring_type == "monthly" and recurring_day:
             remind_at = remind_at.replace(day=recurring_day)
 
+        # Убираем дату и время из текста
         if matched_text:
             text_for_search = text_for_search.replace(matched_text, "").strip()
 
@@ -204,4 +217,3 @@ class ReminderParser:
             "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12
         }
         return months.get(month_name.lower(), 1)
-EOF

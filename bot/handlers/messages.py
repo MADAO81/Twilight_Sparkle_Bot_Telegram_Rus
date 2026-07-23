@@ -4,7 +4,7 @@
 Поддерживает личные и групповые напоминания.
 
 Автор: MADAO81
-Версия: 2.9 — исправлен перенос для повторяющихся напоминаний
+Версия: 3.1 — принудительная коррекция даты для ежемесячных напоминаний
 """
 
 import logging
@@ -78,12 +78,34 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text, remind_at, is_recurring, recurring_type, is_private = parsed
                 logger.info(f"🔍 Распарсено: text='{text}', remind_at={remind_at}, recurring={is_recurring}")
 
-                # Если время уже прошло И это НЕ повторяющееся напоминание
-                if remind_at < datetime.now() and not is_recurring:
-                    remind_at = remind_at + timedelta(days=1)
-                    await update.message.reply_text(
-                        f"⏰ Время уже прошло, перенесла на завтра: {remind_at.strftime('%d.%m.%Y в %H:%M')}\nПродолжаем? 💜"
-                    )
+                # ===== ПРИНУДИТЕЛЬНАЯ КОРРЕКЦИЯ ДЛЯ ЕЖЕМЕСЯЧНЫХ =====
+                if is_recurring and recurring_type == "monthly":
+                    # Извлекаем день из remind_at (или из текста, если не удалось)
+                    day = remind_at.day
+                    now = datetime.now()
+                    # Если день уже прошёл в этом месяце — берём следующий месяц
+                    if day < now.day or (day == now.day and remind_at.hour < now.hour):
+                        if now.month == 12:
+                            month = 1
+                            year = now.year + 1
+                        else:
+                            month = now.month + 1
+                            year = now.year
+                    else:
+                        month = now.month
+                        year = now.year
+                    # Корректируем remind_at на правильный месяц
+                    remind_at = remind_at.replace(year=year, month=month)
+                    logger.info(f"🔍 Принудительная коррекция: новая дата = {remind_at}")
+
+                # Если это повторяющееся напоминание — НЕ переносим время
+                if not is_recurring:
+                    # Для разовых — если время уже прошло, переносим на завтра
+                    if remind_at < datetime.now():
+                        remind_at = remind_at + timedelta(days=1)
+                        await update.message.reply_text(
+                            f"⏰ Время уже прошло, перенесла на завтра: {remind_at.strftime('%d.%m.%Y в %H:%M')}\nПродолжаем? 💜"
+                        )
 
                 reminder_id = reminder_manager.add_reminder(
                     user_id=user_id,
