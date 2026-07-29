@@ -18,33 +18,10 @@ context_manager = ContextManager()
 reminder_manager = ReminderManager()
 reminder_parser = ReminderParser()
 
-# === ПОСТОЯННЫЙ СПИСОК ВСЕХ УЧАСТНИКОВ ===
-# Добавь сюда всех, кто есть в группе (даже если их нет в онлайне)
-GROUP_MEMBERS = [
-    "Joe",
-    "Максим",
-    "Алиса",
-    "Ирина",
-    "Алексей",
-    "Юлия",
-    "Сергей",
-    "Марина",
-    "Анна",
-    "Дмитрий",
-    "Екатерина",
-    "Ольга",
-    "Николай",
-    "Татьяна",
-    "Владимир",
-    "Наталья",
-]
-
 
 async def get_all_members(bot, chat_id: int, bot_username: str) -> list:
-    """Комбинированный метод: администраторы + запасной список."""
+    """Получает реальных участников группы (без бота)."""
     members = []
-    
-    # 1. Пробуем получить администраторов (они точно видны)
     try:
         admins = await bot.get_chat_administrators(chat_id)
         for admin in admins:
@@ -54,16 +31,11 @@ async def get_all_members(bot, chat_id: int, bot_username: str) -> list:
             name = user.first_name or user.username
             if name and name not in members:
                 members.append(name)
-        logger.info(f"👥 Получено {len(members)} администраторов")
+        logger.info(f"👥 Получено {len(members)} реальных участников")
     except Exception as e:
-        logger.warning(f"⚠️ Не удалось получить администраторов: {e}")
+        logger.warning(f"⚠️ Не удалось получить участников: {e}")
 
-    # 2. Добавляем всех из постоянного списка
-    for name in GROUP_MEMBERS:
-        if name not in members:
-            members.append(name)
-    
-    logger.info(f"👥 Итоговый список ({len(members)} человек): {members}")
+    # Если список пуст — возвращаем пустой список, а не запасной
     return members
 
 
@@ -80,8 +52,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         bot_username = context.bot.username
         message_text = update.message.text or ""
-        logger.info(f"📩 Групповое сообщение: '{message_text[:50]}...'")
-
         if f"@{bot_username}" in message_text.lower():
             logger.info("✅ Найдено упоминание")
         else:
@@ -94,15 +64,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         user_message = update.message.text or ""
 
-        # === ПОЛУЧАЕМ УЧАСТНИКОВ ===
+        # === ОПРЕДЕЛЯЕМ, ВОПРОС ПРО ВЫБОР ===
+        is_selection_question = any(keyword in user_message.lower() for keyword in [
+            "кто", "какой", "выбери", "выбрать", "лучше", "умнее", "красивее", "круче"
+        ])
+
         chat_users = []
-        if update.message.chat.type != "private":
+        if update.message.chat.type != "private" and is_selection_question:
             chat_id = update.message.chat_id
             bot_username = context.bot.username
             chat_users = await get_all_members(context.bot, chat_id, bot_username)
-            logger.info(f"👥 Передаю имена: {chat_users}")
+            logger.info(f"👥 Передаю реальных участников: {chat_users}")
 
-        # === ПРОВЕРКА НА ВЕБ-ПОИСК ===
+            # Если список пуст — не передаём ничего
+            if not chat_users:
+                await status_message.delete()
+                await update.message.reply_text("😅 Не вижу других участников, чтобы выбрать!")
+                return
+
+        # === ПРОВЕРКА НА ПОИСК ===
         search_keywords = ["найди", "поищи", "погугли", "узнай", "расскажи", "что такое", "кто такой", "как работает", "последние новости", "новости", "свежие", "актуально"]
         if any(keyword in user_message.lower() for keyword in search_keywords):
             logger.info("🔍 Запрос на поиск")
@@ -116,7 +96,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("😅 Не смогла найти информацию. Попробуй переформулировать! 📚")
                 return
 
-        # ========== ПРОВЕРКА НА НАПОМИНАНИЯ ==========
+        # ========== НАПОМИНАНИЯ ==========
         reminder_keywords = ["напомни", "напоминание", "напомнить", "запомни"]
         if any(keyword in user_message.lower() for keyword in reminder_keywords):
             parsed = reminder_parser.parse_reminder(user_message)
@@ -167,7 +147,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-        # ========== ПРОВЕРКА НА ОТМЕНУ НАПОМИНАНИЯ ==========
+        # ========== ОТМЕНА НАПОМИНАНИЯ ==========
         cancel_keywords = ["отмени напоминание", "удали напоминание", "отмени"]
         if any(keyword in user_message.lower() for keyword in cancel_keywords):
             query = user_message
@@ -183,7 +163,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text(f"❌ Не нашла напоминание по запросу: _{query}_")
                 return
 
-        # ========== ПРОВЕРКА НА ПОГОДУ ==========
+        # ========== ПОГОДА ==========
         weather_keywords = ["погода", "weather", "за окном", "температура", "дождь", "солнце", "градус", "ветер"]
         if any(kw in user_message.lower() for kw in weather_keywords):
             weather = await weather_service.get_weather()
