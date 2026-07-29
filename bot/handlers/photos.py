@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 context_manager = ContextManager()
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info("📸 НОВАЯ ВЕРСИЯ handle_photo ВЫЗВАНА!")
+    logger.info("📸 ФУНКЦИЯ handle_photo ВЫЗВАНА!")
 
     if not is_working_hours():
         logger.info("⏰ Не рабочее время")
@@ -24,34 +24,33 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         user_id = update.effective_user.id
-        user_message = update.message.caption or "Без подписи"
+        user_message = update.message.caption or "Красивая картинка!"
 
-        logger.info("📸 Шаг 1: Получаю фото...")
+        # Получаем фото в максимальном качестве
         photo_file = await update.message.photo[-1].get_file()
-        
-        logger.info("📸 Шаг 2: Скачиваю данные...")
         image_data = await photo_file.download_as_bytearray()
         
-        logger.info(f"📸 Шаг 3: Фото получено, размер: {len(image_data)} байт")
-        logger.info("📸 Шаг 4: Инициализация клиента через ProxyAPI...")
+        logger.info(f"📸 Фото получено, размер: {len(image_data)} байт")
 
-        client = AsyncOpenAI(
-            api_key=Config.PROXY_API_KEY,
-            base_url="https://api.proxyapi.ru/v1"
-        )
+        # === ПРЯМОЙ OPENAI ===
+        logger.info("🖼️ Отправка запроса в OpenAI Vision...")
+        client = AsyncOpenAI(api_key=Config.OPENAI_API_KEY)
         
+        # Кодируем изображение в base64
         base64_image = base64.b64encode(image_data).decode('utf-8')
-        logger.info("📸 Шаг 5: Изображение закодировано")
-
+        logger.info(f"🖼️ Изображение закодировано, длина: {len(base64_image)}")
+        
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": [
-                {"type": "text", "text": user_message or "Опиши картинку с сарказмом, как Искорка."},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                {"type": "text", "text": user_message or "Опиши эту картинку."},
+                {"type": "image_url", "image_url": {
+                    "url": f"data:image/jpeg;base64,{base64_image}"
+                }}
             ]}
         ]
 
-        logger.info("📸 Шаг 6: Отправка запроса в Vision через ProxyAPI...")
+        logger.info("🖼️ Вызов OpenAI...")
         response = await client.chat.completions.create(
             model="gpt-4o",
             messages=messages,
@@ -60,21 +59,28 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             timeout=30.0
         )
 
-        logger.info("📸 Шаг 7: Ответ получен")
         result = response.choices[0].message.content.strip() if response.choices else None
-        logger.info(f"📸 Шаг 8: Результат: {result[:100] if result else 'None'}")
+        logger.info(f"🖼️ Ответ получен: {result[:100] if result else 'None'}")
 
         if not result:
             result = "🖼️ Красивая картинка! 📚"
 
         await status_message.delete()
-        await update.message.reply_text(f"🖼️ {result}")
+
+        if update.message.chat.type == "private":
+            await update.message.reply_text(f"🖼️ {result}")
+        else:
+            await update.message.reply_text(
+                f"🖼️ {result}",
+                reply_to_message_id=update.message.message_id
+            )
 
         context_manager.save_context(user_id, f"[Фото] {user_message}", result)
         logger.info("✅ Фото обработано")
 
     except Exception as e:
-        logger.error(f"❌ ОШИБКА: {e}")
-        logger.error(f"❌ ТИП ОШИБКИ: {type(e)}")
-        logger.error(f"❌ ТРЕЙСБЕК:\n{traceback.format_exc()}")
-        await status_message.edit_text("🖼️ Ой! Что-то пошло не так! 📚")
+        logger.error(f"❌ Ошибка: {e}")
+        logger.error(f"❌ Трейсбек:\n{traceback.format_exc()}")
+        await status_message.edit_text(
+            "🖼️ Ой! Что-то пошло не так! 📚"
+        )

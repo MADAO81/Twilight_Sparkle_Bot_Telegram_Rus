@@ -1,11 +1,3 @@
-"""
-Обработчик текстовых сообщений для бота Сумеречная Искорка.
-Реагирует на упоминания, распознаёт запросы на поиск и погоду.
-
-Автор: MADAO81
-Версия: 2.1 — расширены ключевые слова для поиска
-"""
-
 import logging
 import re
 from datetime import datetime, timedelta
@@ -26,9 +18,56 @@ context_manager = ContextManager()
 reminder_manager = ReminderManager()
 reminder_parser = ReminderParser()
 
+# === ПОСТОЯННЫЙ СПИСОК ВСЕХ УЧАСТНИКОВ ===
+# Добавь сюда всех, кто есть в группе (даже если их нет в онлайне)
+GROUP_MEMBERS = [
+    "Joe",
+    "Максим",
+    "Алиса",
+    "Ирина",
+    "Алексей",
+    "Юлия",
+    "Сергей",
+    "Марина",
+    "Анна",
+    "Дмитрий",
+    "Екатерина",
+    "Ольга",
+    "Николай",
+    "Татьяна",
+    "Владимир",
+    "Наталья",
+]
+
+
+async def get_all_members(bot, chat_id: int, bot_username: str) -> list:
+    """Комбинированный метод: администраторы + запасной список."""
+    members = []
+    
+    # 1. Пробуем получить администраторов (они точно видны)
+    try:
+        admins = await bot.get_chat_administrators(chat_id)
+        for admin in admins:
+            user = admin.user
+            if user.username == bot_username:
+                continue
+            name = user.first_name or user.username
+            if name and name not in members:
+                members.append(name)
+        logger.info(f"👥 Получено {len(members)} администраторов")
+    except Exception as e:
+        logger.warning(f"⚠️ Не удалось получить администраторов: {e}")
+
+    # 2. Добавляем всех из постоянного списка
+    for name in GROUP_MEMBERS:
+        if name not in members:
+            members.append(name)
+    
+    logger.info(f"👥 Итоговый список ({len(members)} человек): {members}")
+    return members
+
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка текстовых сообщений."""
     logger.info("🔥 handle_message ВЫЗВАНА!")
 
     if not is_working_hours():
@@ -36,7 +75,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(get_working_status_message())
         return
 
-    # === ПРОВЕРКА: нужно ли реагировать ===
     if update.message.chat.type == "private":
         logger.info("📩 Сообщение в личке — отвечаем всегда")
     else:
@@ -56,16 +94,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         user_message = update.message.text or ""
 
-        # ========== ПРОВЕРКА НА ВЕБ-ПОИСК ==========
-        search_keywords = [
-            "найди", "поищи", "погугли", "узнай",
-            "расскажи", "что такое", "кто такой",
-            "как работает", "последние новости",
-            "новости", "свежие", "актуально",
-            "информация о", "данные о", "расскажи про"
-        ]
+        # === ПОЛУЧАЕМ УЧАСТНИКОВ ===
+        chat_users = []
+        if update.message.chat.type != "private":
+            chat_id = update.message.chat_id
+            bot_username = context.bot.username
+            chat_users = await get_all_members(context.bot, chat_id, bot_username)
+            logger.info(f"👥 Передаю имена: {chat_users}")
+
+        # === ПРОВЕРКА НА ВЕБ-ПОИСК ===
+        search_keywords = ["найди", "поищи", "погугли", "узнай", "расскажи", "что такое", "кто такой", "как работает", "последние новости", "новости", "свежие", "актуально"]
         if any(keyword in user_message.lower() for keyword in search_keywords):
-            logger.info("🔍 Обнаружен запрос на поиск")
+            logger.info("🔍 Запрос на поиск")
             response = await search_web(user_message)
             if response:
                 await status_message.delete()
@@ -73,13 +113,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             else:
                 await status_message.delete()
-                await update.message.reply_text("😅 Не смогла найти информацию. Попробуй переформулировать запрос! 📚")
+                await update.message.reply_text("😅 Не смогла найти информацию. Попробуй переформулировать! 📚")
                 return
 
-        # ========== ПРОВЕРКА НА СОЗДАНИЕ НАПОМИНАНИЯ ==========
+        # ========== ПРОВЕРКА НА НАПОМИНАНИЯ ==========
         reminder_keywords = ["напомни", "напоминание", "напомнить", "запомни"]
         if any(keyword in user_message.lower() for keyword in reminder_keywords):
-            logger.info("🔍 Обнаружена команда создания напоминания")
             parsed = reminder_parser.parse_reminder(user_message)
             if parsed:
                 text, remind_at, is_recurring, recurring_type, is_private = parsed
@@ -100,7 +139,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
 
                 await status_message.delete()
-
                 type_label = "🔒 Личное" if is_private else "📢 Групповое"
                 type_desc = "в личку" if is_private else f"в группу {update.message.chat.title or 'эту группу'}"
 
@@ -132,7 +170,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # ========== ПРОВЕРКА НА ОТМЕНУ НАПОМИНАНИЯ ==========
         cancel_keywords = ["отмени напоминание", "удали напоминание", "отмени"]
         if any(keyword in user_message.lower() for keyword in cancel_keywords):
-            logger.info("🔍 Обнаружена команда отмены")
             query = user_message
             for kw in cancel_keywords:
                 query = query.lower().replace(kw, "").strip()
@@ -149,7 +186,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # ========== ПРОВЕРКА НА ПОГОДУ ==========
         weather_keywords = ["погода", "weather", "за окном", "температура", "дождь", "солнце", "градус", "ветер"]
         if any(kw in user_message.lower() for kw in weather_keywords):
-            logger.info("🔍 Обнаружен запрос погоды")
             weather = await weather_service.get_weather()
             if weather:
                 weather_text = weather_service.get_weather_text(weather)
@@ -157,11 +193,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(f"🌤️ *Погода*\n\n{weather_text}", parse_mode="Markdown")
                 return
 
-        # ========== ОБЫЧНЫЙ ОТВЕТ ЧЕРЕЗ DEEPSEEK ==========
+        # ========== ОБЫЧНЫЙ ОТВЕТ ==========
         context_history = context_manager.get_context(user_id)
 
+        enhanced_message = user_message
+        if chat_users:
+            enhanced_message = f"{user_message}\n\n[Имена всех участников группы: {', '.join(chat_users)}]"
+
         response = await get_twilight_response(
-            user_message=user_message,
+            user_message=enhanced_message,
             mood_description="happy",
             context_history=context_history
         )
