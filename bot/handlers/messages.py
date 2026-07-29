@@ -18,9 +18,16 @@ context_manager = ContextManager()
 reminder_manager = ReminderManager()
 reminder_parser = ReminderParser()
 
+# === ПОСТОЯННЫЙ СПИСОК ВСЕХ УЧАСТНИКОВ ===
+GROUP_MEMBERS = [
+    "Joe", "Максим", "Алиса", "Ирина", "Алексей",
+    "Юлия", "Сергей", "Марина", "Анна", "Дмитрий",
+    "Екатерина", "Ольга", "Николай", "Татьяна",
+    "Владимир", "Наталья"
+]
+
 
 async def get_all_members(bot, chat_id: int, bot_username: str) -> list:
-    """Получает реальных участников группы (без бота)."""
     members = []
     try:
         admins = await bot.get_chat_administrators(chat_id)
@@ -31,12 +38,23 @@ async def get_all_members(bot, chat_id: int, bot_username: str) -> list:
             name = user.first_name or user.username
             if name and name not in members:
                 members.append(name)
-        logger.info(f"👥 Получено {len(members)} реальных участников")
     except Exception as e:
-        logger.warning(f"⚠️ Не удалось получить участников: {e}")
+        logger.warning(f"⚠️ Не удалось получить администраторов: {e}")
 
-    # Если список пуст — возвращаем пустой список, а не запасной
+    for name in GROUP_MEMBERS:
+        if name not in members:
+            members.append(name)
+
     return members
+
+
+def contains_names(text: str) -> bool:
+    """Проверяет, есть ли в тексте имена из списка."""
+    text_lower = text.lower()
+    for name in GROUP_MEMBERS:
+        if name.lower() in text_lower:
+            return True
+    return False
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -64,23 +82,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         user_message = update.message.text or ""
 
-        # === ОПРЕДЕЛЯЕМ, ВОПРОС ПРО ВЫБОР ===
+        # === ОПРЕДЕЛЯЕМ, НУЖЕН ЛИ СПИСОК ИМЁН ===
         is_selection_question = any(keyword in user_message.lower() for keyword in [
             "кто", "какой", "выбери", "выбрать", "лучше", "умнее", "красивее", "круче"
         ])
+        has_names = contains_names(user_message)
 
         chat_users = []
-        if update.message.chat.type != "private" and is_selection_question:
+        if update.message.chat.type != "private" and is_selection_question and has_names:
             chat_id = update.message.chat_id
             bot_username = context.bot.username
             chat_users = await get_all_members(context.bot, chat_id, bot_username)
-            logger.info(f"👥 Передаю реальных участников: {chat_users}")
-
-            # Если список пуст — не передаём ничего
-            if not chat_users:
-                await status_message.delete()
-                await update.message.reply_text("😅 Не вижу других участников, чтобы выбрать!")
-                return
+            logger.info(f"👥 Передаю имена: {chat_users}")
 
         # === ПРОВЕРКА НА ПОИСК ===
         search_keywords = ["найди", "поищи", "погугли", "узнай", "расскажи", "что такое", "кто такой", "как работает", "последние новости", "новости", "свежие", "актуально"]
