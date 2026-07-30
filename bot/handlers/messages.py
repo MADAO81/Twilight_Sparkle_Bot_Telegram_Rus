@@ -49,12 +49,47 @@ async def get_all_members(bot, chat_id: int, bot_username: str) -> list:
 
 
 def contains_names(text: str) -> bool:
-    """Проверяет, есть ли в тексте имена из списка."""
     text_lower = text.lower()
     for name in GROUP_MEMBERS:
         if name.lower() in text_lower:
             return True
     return False
+
+
+async def send_long_message(update: Update, text: str, reply_to_message_id: int = None, parse_mode: str = None):
+    """Отправляет длинное сообщение, разбивая на части."""
+    if not text:
+        return
+    
+    # Если сообщение короткое — отправляем целиком
+    if len(text) < 4000:
+        if reply_to_message_id:
+            await update.message.reply_text(text, reply_to_message_id=reply_to_message_id, parse_mode=parse_mode)
+        else:
+            await update.message.reply_text(text, parse_mode=parse_mode)
+        return
+    
+    # Разбиваем на части
+    parts = []
+    current_part = ""
+    for paragraph in text.split('\n'):
+        if len(current_part) + len(paragraph) + 1 < 4000:
+            current_part += paragraph + '\n'
+        else:
+            parts.append(current_part.strip())
+            current_part = paragraph + '\n'
+    if current_part:
+        parts.append(current_part.strip())
+    
+    # Отправляем части
+    for i, part in enumerate(parts):
+        if i == 0:
+            if reply_to_message_id:
+                await update.message.reply_text(part, reply_to_message_id=reply_to_message_id, parse_mode=parse_mode)
+            else:
+                await update.message.reply_text(part, parse_mode=parse_mode)
+        else:
+            await update.message.reply_text(f"*Продолжение:*\n{part}", parse_mode="Markdown")
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -82,7 +117,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         user_message = update.message.text or ""
 
-        # === ОПРЕДЕЛЯЕМ, НУЖЕН ЛИ СПИСОК ИМЁН ===
         is_selection_question = any(keyword in user_message.lower() for keyword in [
             "кто", "какой", "выбери", "выбрать", "лучше", "умнее", "красивее", "круче"
         ])
@@ -102,11 +136,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response = await search_web(user_message)
             if response:
                 await status_message.delete()
-                await update.message.reply_text(f"🔍 *Результат поиска:*\n\n{response}", parse_mode="Markdown")
+                await send_long_message(update, f"🔍 *Результат поиска:*\n\n{response}", parse_mode="Markdown")
                 return
             else:
                 await status_message.delete()
-                await update.message.reply_text("😅 Не смогла найти информацию. Попробуй переформулировать! 📚")
+                await send_long_message(update, "😅 Не смогла найти информацию. Попробуй переформулировать! 📚")
                 return
 
         # ========== НАПОМИНАНИЯ ==========
@@ -146,18 +180,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 confirm_text += "\n\n📚 Я напомню тебе вовремя! 💜"
 
-                await update.message.reply_text(confirm_text, parse_mode="Markdown")
+                await send_long_message(update, confirm_text, parse_mode="Markdown")
                 return
             else:
                 await status_message.delete()
-                await update.message.reply_text(
-                    "😅 Не смогла разобрать дату и время!\n\n"
-                    "Попробуй так:\n"
-                    "`напомни 15 июля в 14:00 позвонить клиенту`\n"
-                    "или\n"
-                    "`напомни через 3 дня сдать отчёт`",
-                    parse_mode="Markdown"
-                )
+                await send_long_message(update, "😅 Не смогла разобрать дату и время!\n\nПопробуй так:\n`напомни 15 июля в 14:00 позвонить клиенту`\nили\n`напомни через 3 дня сдать отчёт`", parse_mode="Markdown")
                 return
 
         # ========== ОТМЕНА НАПОМИНАНИЯ ==========
@@ -171,9 +198,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 success = reminder_manager.cancel_reminder_by_text(user_id, query, chat_id)
                 await status_message.delete()
                 if success:
-                    await update.message.reply_text(f"✅ *Напоминание отменено!*")
+                    await send_long_message(update, f"✅ *Напоминание отменено!*", parse_mode="Markdown")
                 else:
-                    await update.message.reply_text(f"❌ Не нашла напоминание по запросу: _{query}_")
+                    await send_long_message(update, f"❌ Не нашла напоминание по запросу: _{query}_", parse_mode="Markdown")
                 return
 
         # ========== ПОГОДА ==========
@@ -183,10 +210,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if weather:
                 weather_text = weather_service.get_weather_text(weather)
                 await status_message.delete()
-                await update.message.reply_text(f"🌤️ *Погода*\n\n{weather_text}", parse_mode="Markdown")
+                await send_long_message(update, f"🌤️ *Погода*\n\n{weather_text}", parse_mode="Markdown")
                 return
 
-        # ========== ОБЫЧНЫЙ ОТВЕТ ==========
+        # ========== ОБЫЧНЫЙ ОТВЕТ (С РАЗБИВКОЙ) ==========
         context_history = context_manager.get_context(user_id)
 
         enhanced_message = user_message
@@ -207,7 +234,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except BadRequest:
             logger.warning("⚠️ Не удалось удалить status_message")
 
-        await update.message.reply_text(response)
+        # === ОТПРАВЛЯЕМ С РАЗБИВКОЙ ===
+        await send_long_message(update, response)
 
         context_manager.save_context(user_id, user_message, response)
 
@@ -218,6 +246,4 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "😅 Упс! Что-то пошло не так!\nПопробуй ещё раз или напиши /help для справки! 📚"
             )
         except BadRequest:
-            await update.message.reply_text(
-                "😅 Упс! Что-то пошло не так!\nПопробуй ещё раз или напиши /help для справки! 📚"
-            )
+            await send_long_message(update, "😅 Упс! Что-то пошло не так!\nПопробуй ещё раз или напиши /help для справки! 📚")
