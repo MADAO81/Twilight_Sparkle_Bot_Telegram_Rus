@@ -18,58 +18,17 @@ context_manager = ContextManager()
 reminder_manager = ReminderManager()
 reminder_parser = ReminderParser()
 
-# === ПОСТОЯННЫЙ СПИСОК ВСЕХ УЧАСТНИКОВ ===
-GROUP_MEMBERS = [
-    "Joe", "Максим", "Алиса", "Ирина", "Алексей",
-    "Юлия", "Сергей", "Марина", "Анна", "Дмитрий",
-    "Екатерина", "Ольга", "Николай", "Татьяна",
-    "Владимир", "Наталья"
-]
-
-
-async def get_all_members(bot, chat_id: int, bot_username: str) -> list:
-    members = []
-    try:
-        admins = await bot.get_chat_administrators(chat_id)
-        for admin in admins:
-            user = admin.user
-            if user.username == bot_username:
-                continue
-            name = user.first_name or user.username
-            if name and name not in members:
-                members.append(name)
-    except Exception as e:
-        logger.warning(f"⚠️ Не удалось получить администраторов: {e}")
-
-    for name in GROUP_MEMBERS:
-        if name not in members:
-            members.append(name)
-
-    return members
-
-
-def contains_names(text: str) -> bool:
-    text_lower = text.lower()
-    for name in GROUP_MEMBERS:
-        if name.lower() in text_lower:
-            return True
-    return False
-
 
 async def send_long_message(update: Update, text: str, reply_to_message_id: int = None, parse_mode: str = None):
-    """Отправляет длинное сообщение, разбивая на части."""
     if not text:
         return
-    
-    # Если сообщение короткое — отправляем целиком
     if len(text) < 4000:
         if reply_to_message_id:
             await update.message.reply_text(text, reply_to_message_id=reply_to_message_id, parse_mode=parse_mode)
         else:
             await update.message.reply_text(text, parse_mode=parse_mode)
         return
-    
-    # Разбиваем на части
+
     parts = []
     current_part = ""
     for paragraph in text.split('\n'):
@@ -80,8 +39,7 @@ async def send_long_message(update: Update, text: str, reply_to_message_id: int 
             current_part = paragraph + '\n'
     if current_part:
         parts.append(current_part.strip())
-    
-    # Отправляем части
+
     for i, part in enumerate(parts):
         if i == 0:
             if reply_to_message_id:
@@ -117,19 +75,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         user_message = update.message.text or ""
 
-        is_selection_question = any(keyword in user_message.lower() for keyword in [
-            "кто", "какой", "выбери", "выбрать", "лучше", "умнее", "красивее", "круче"
-        ])
-        has_names = contains_names(user_message)
-
-        chat_users = []
-        if update.message.chat.type != "private" and is_selection_question and has_names:
-            chat_id = update.message.chat_id
-            bot_username = context.bot.username
-            chat_users = await get_all_members(context.bot, chat_id, bot_username)
-            logger.info(f"👥 Передаю имена: {chat_users}")
-
-        # === ПРОВЕРКА НА ПОИСК ===
+        # === ПОИСК ===
         search_keywords = ["найди", "поищи", "погугли", "узнай", "расскажи", "что такое", "кто такой", "как работает", "последние новости", "новости", "свежие", "актуально"]
         if any(keyword in user_message.lower() for keyword in search_keywords):
             logger.info("🔍 Запрос на поиск")
@@ -143,7 +89,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await send_long_message(update, "😅 Не смогла найти информацию. Попробуй переформулировать! 📚")
                 return
 
-        # ========== НАПОМИНАНИЯ ==========
+        # === НАПОМИНАНИЯ ===
         reminder_keywords = ["напомни", "напоминание", "напомнить", "запомни"]
         if any(keyword in user_message.lower() for keyword in reminder_keywords):
             parsed = reminder_parser.parse_reminder(user_message)
@@ -187,7 +133,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await send_long_message(update, "😅 Не смогла разобрать дату и время!\n\nПопробуй так:\n`напомни 15 июля в 14:00 позвонить клиенту`\nили\n`напомни через 3 дня сдать отчёт`", parse_mode="Markdown")
                 return
 
-        # ========== ОТМЕНА НАПОМИНАНИЯ ==========
+        # === ОТМЕНА НАПОМИНАНИЯ ===
         cancel_keywords = ["отмени напоминание", "удали напоминание", "отмени"]
         if any(keyword in user_message.lower() for keyword in cancel_keywords):
             query = user_message
@@ -203,7 +149,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await send_long_message(update, f"❌ Не нашла напоминание по запросу: _{query}_", parse_mode="Markdown")
                 return
 
-        # ========== ПОГОДА ==========
+        # === ПОГОДА ===
         weather_keywords = ["погода", "weather", "за окном", "температура", "дождь", "солнце", "градус", "ветер"]
         if any(kw in user_message.lower() for kw in weather_keywords):
             weather = await weather_service.get_weather()
@@ -213,15 +159,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await send_long_message(update, f"🌤️ *Погода*\n\n{weather_text}", parse_mode="Markdown")
                 return
 
-        # ========== ОБЫЧНЫЙ ОТВЕТ (С РАЗБИВКОЙ) ==========
+        # === ОБЫЧНЫЙ ОТВЕТ ===
         context_history = context_manager.get_context(user_id)
 
-        enhanced_message = user_message
-        if chat_users:
-            enhanced_message = f"{user_message}\n\n[Имена всех участников группы: {', '.join(chat_users)}]"
-
         response = await get_twilight_response(
-            user_message=enhanced_message,
+            user_message=user_message,
             mood_description="happy",
             context_history=context_history
         )
@@ -234,9 +176,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except BadRequest:
             logger.warning("⚠️ Не удалось удалить status_message")
 
-        # === ОТПРАВЛЯЕМ С РАЗБИВКОЙ ===
         await send_long_message(update, response)
-
         context_manager.save_context(user_id, user_message, response)
 
     except Exception as e:
