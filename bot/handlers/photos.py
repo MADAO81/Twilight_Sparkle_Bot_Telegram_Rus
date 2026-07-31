@@ -1,9 +1,9 @@
 """
 Обработчик фото для бота Сумеречная Искорка.
-Комментирует фото ТОЛЬКО если в подписи есть вопрос или ключевые слова.
+Комментирует фото ТОЛЬКО если есть вопрос и упоминание бота.
 
 Автор: MADAO81
-Версия: 2.3 — только по запросу
+Версия: 2.4 — проверка упоминания в группе
 """
 
 import logging
@@ -20,12 +20,20 @@ context_manager = ContextManager()
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка фото — только если есть вопрос в подписи."""
+    """Обработка фото — только если есть упоминание и вопрос."""
     logger.info("📸 ФУНКЦИЯ handle_photo ВЫЗВАНА!")
 
     if not is_working_hours():
         logger.info("⏰ Не рабочее время, фото игнорируется")
         return
+
+    # === ПРОВЕРКА: в группе нужно упоминание ===
+    if update.message.chat.type != "private":
+        bot_username = context.bot.username
+        caption = update.message.caption or ""
+        if f"@{bot_username}" not in caption:
+            logger.info("📸 Нет упоминания бота, пропускаем")
+            return
 
     # === ПРОВЕРКА: есть ли вопрос в подписи ===
     caption = update.message.caption or ""
@@ -34,7 +42,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not is_question:
         logger.info("📸 Нет вопроса в подписи, пропускаем")
-        await update.message.reply_text("📸 Хочешь, чтобы я описала картинку? Спроси с вопросом! 😏")
+        # В личке можно ответить, в группе — молчим
+        if update.message.chat.type == "private":
+            await update.message.reply_text("📸 Хочешь, чтобы я описала картинку? Спроси с вопросом! 😏")
         return
 
     status_message = await update.message.reply_text("🖼️ Смотрю на картинку...")

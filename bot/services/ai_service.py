@@ -14,19 +14,16 @@ logger = logging.getLogger(__name__)
 async def get_twilight_response(
     user_message: str,
     mood_description: str = "happy",
-    context_history: Optional[List[Dict]] = None
+    context_history: Optional[List[Dict]] = None,
+    use_search: bool = False
 ) -> Optional[str]:
-    """Generates a response from Twilight Sparkle using DeepSeek."""
     try:
-        # Используем DeepSeek через ProxyAPI
         client = AsyncOpenAI(
             api_key=Config.PROXY_API_KEY,
             base_url="https://api.proxyapi.ru/openrouter/v1"
         )
 
         system_prompt = SYSTEM_PROMPT
-        if mood_description == "sad":
-            system_prompt += "\n\n⚠️ IMPORTANT: You are in a sad mood right now."
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -38,37 +35,105 @@ async def get_twilight_response(
 
         messages.append({"role": "user", "content": user_message})
 
-        logger.info(f"🧠 Request to DeepSeek (model: {Config.DEEPSEEK_MODEL})...")
+        params = {
+            "model": Config.DEEPSEEK_MODEL,
+            "messages": messages,
+            "max_tokens": Config.DEEPSEEK_MAX_TOKENS,
+            "temperature": Config.DEEPSEEK_TEMPERATURE,
+            "timeout": 30.0
+        }
+
+        if use_search:
+            params["tools"] = [{"type": "web_search"}]
+            logger.info("🌐 Добавлен инструмент веб-поиска")
+
+        response = await client.chat.completions.create(**params)
+
+        if response.choices and len(response.choices) > 0:
+            return response.choices[0].message.content.strip()
+        return None
+
+    except Exception as e:
+        logger.error(f"❌ DeepSeek error: {e}")
+        return None
+
+
+async def get_daily_fact() -> Optional[str]:
+    """Генерирует интересный факт дня на РУССКОМ языке."""
+    try:
+        client = AsyncOpenAI(
+            api_key=Config.PROXY_API_KEY,
+            base_url="https://api.proxyapi.ru/openrouter/v1"
+        )
+
+        prompt = "Расскажи короткий, интересный научный или исторический факт. ОБЯЗАТЕЛЬНО на русском языке. Будь остроумна и увлекательна, как Искорка."
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt}
+        ]
 
         response = await client.chat.completions.create(
             model=Config.DEEPSEEK_MODEL,
             messages=messages,
-            max_tokens=Config.DEEPSEEK_MAX_TOKENS,
-            temperature=Config.DEEPSEEK_TEMPERATURE,
+            max_tokens=300,
+            temperature=0.8,
             timeout=30.0
         )
 
         if response.choices and len(response.choices) > 0:
             return response.choices[0].message.content.strip()
-        else:
-            logger.warning("⚠️ DeepSeek returned empty response")
-            return None
+        return None
 
     except Exception as e:
-        logger.error(f"❌ Error calling DeepSeek: {e}")
+        logger.error(f"❌ Daily fact error: {e}")
         return None
 
 
-# === ФУНКЦИЯ АНАЛИЗА КАРТИНОК (скопирована у Флаттершай) ===
+async def get_goodnight_message() -> Optional[str]:
+    """Генерирует пожелание спокойной ночи на РУССКОМ языке."""
+    try:
+        client = AsyncOpenAI(
+            api_key=Config.PROXY_API_KEY,
+            base_url="https://api.proxyapi.ru/openrouter/v1"
+        )
+
+        prompt = "Пожелай пользователю спокойной ночи. ОБЯЗАТЕЛЬНО на русском языке. Сделай это остроумно, но тепло. Ты — Искорка."
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt}
+        ]
+
+        response = await client.chat.completions.create(
+            model=Config.DEEPSEEK_MODEL,
+            messages=messages,
+            max_tokens=200,
+            temperature=0.8,
+            timeout=30.0
+        )
+
+        if response.choices and len(response.choices) > 0:
+            return response.choices[0].message.content.strip()
+        return None
+
+    except Exception as e:
+        logger.error(f"❌ Goodnight message error: {e}")
+        return None
+
+
 async def analyze_image(
     image_data: bytes,
     user_message: Optional[str] = None,
     mood_description: str = "happy"
 ) -> Optional[str]:
-    """Analyzes an image using OpenAI Vision API."""
+    """
+    Анализирует изображение через OpenAI Vision API (через ProxyAPI).
+    """
     logger.info("🖼️ Request to OpenAI Vision API...")
     try:
-        client = AsyncOpenAI(api_key=Config.OPENAI_API_KEY)
+        client = AsyncOpenAI(
+            api_key=Config.PROXY_API_KEY,
+            base_url="https://api.proxyapi.ru/v1"
+        )
 
         system_prompt = SYSTEM_PROMPT
         if mood_description == "sad":
@@ -86,7 +151,7 @@ async def analyze_image(
                 "content": [
                     {
                         "type": "text",
-                        "text": f"User sent an image. {user_message if user_message else 'Describe what you see in the image and comment on it in your style.'}"
+                        "text": f"User sent an image. {user_message if user_message else 'Describe what you see in the image and comment on it in your style.'} ОТВЕЧАЙ НА РУССКОМ ЯЗЫКЕ."
                     },
                     {
                         "type": "image_url",
@@ -119,14 +184,18 @@ async def analyze_image(
         return None
 
 
-# === ОСТАЛЬНЫЕ ФУНКЦИИ ===
 async def transcribe_audio(
     audio_data: bytes,
     file_extension: str = ".ogg"
 ) -> Optional[str]:
-    """Transcribes audio using OpenAI Whisper."""
+    """
+    Транскрибирует аудио через OpenAI Whisper (через ProxyAPI).
+    """
     try:
-        client = AsyncOpenAI(api_key=Config.OPENAI_API_KEY)
+        client = AsyncOpenAI(
+            api_key=Config.PROXY_API_KEY,
+            base_url="https://api.proxyapi.ru/v1"
+        )
 
         audio_dir = Path(Config.AUDIO_DIR)
         audio_dir.mkdir(parents=True, exist_ok=True)
@@ -135,8 +204,6 @@ async def transcribe_audio(
         with open(audio_path, "wb") as f:
             f.write(audio_data)
 
-        logger.info(f"🎤 Sending audio to Whisper...")
-
         with open(audio_path, "rb") as audio_file:
             transcription = await client.audio.transcriptions.create(
                 model="whisper-1",
@@ -144,142 +211,43 @@ async def transcribe_audio(
                 language="ru"
             )
 
-        try:
-            os.remove(audio_path)
-        except:
-            pass
+        os.remove(audio_path)
 
         if transcription and transcription.text:
-            logger.info(f"✅ Transcription successful: {transcription.text[:50]}...")
             return transcription.text.strip()
-        else:
-            logger.warning("⚠️ Whisper returned empty response")
-            return None
-
-    except ImportError:
-        logger.error("❌ openai library not installed")
-        return None
-    except Exception as e:
-        logger.error(f"❌ Error transcribing audio: {e}")
         return None
 
-
-async def check_ai_health() -> Dict[str, Any]:
-    """Checks OpenAI service availability."""
-    status = {
-        'openai': False,
-        'vision': False,
-        'whisper': False,
-        'any_available': False
-    }
-
-    try:
-        client = AsyncOpenAI(api_key=Config.OPENAI_API_KEY)
-
-        try:
-            test_response = await client.chat.completions.create(
-                model=Config.OPENAI_MODEL,
-                messages=[{"role": "user", "content": "Test"}],
-                max_tokens=5,
-                timeout=10.0
-            )
-            if test_response.choices:
-                status['openai'] = True
-                logger.info("✅ OpenAI GPT available")
-        except Exception as e:
-            logger.warning(f"⚠️ OpenAI GPT unavailable: {e}")
-
-        status['vision'] = status['openai']
-        status['whisper'] = status['openai']
-        status['any_available'] = status['openai']
-
-    except ImportError:
-        logger.error("❌ openai library not installed")
     except Exception as e:
-        logger.error(f"❌ Error checking OpenAI: {e}")
-
-    return status
-
-
-def get_ai_status_message(status: Dict[str, Any]) -> str:
-    """Returns formatted AI status message."""
-    if not status['any_available']:
-        return "🧠 AI: ❌ *Unavailable* (check OPENAI_API_KEY in .env)"
-
-    openai_status = "✅ Available" if status['openai'] else "❌ Unavailable"
-    vision_status = "✅ Available" if status['vision'] else "❌ Unavailable"
-    whisper_status = "✅ Available" if status['whisper'] else "❌ Unavailable"
-
-    return (
-        f"🧠 *AI Status:*\n\n"
-        f"🤖 OpenAI GPT: {openai_status}\n"
-        f"🖼️ Vision API: {vision_status}\n"
-        f"🎤 Whisper: {whisper_status}"
-    )
-
-
-async def get_daily_fact() -> Optional[str]:
-    """Generates daily fact using DeepSeek."""
-    try:
-        client = AsyncOpenAI(
-            api_key=Config.PROXY_API_KEY,
-            base_url="https://api.proxyapi.ru/openrouter/v1"
-        )
-        response = await client.chat.completions.create(
-            model=Config.DEEPSEEK_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": "Tell a short interesting fact."}
-            ],
-            max_tokens=200,
-            temperature=0.8
-        )
-        return response.choices[0].message.content.strip() if response.choices else None
-    except Exception as e:
-        logger.error(f"❌ Daily fact error: {e}")
-        return None
-
-
-async def get_goodnight_message() -> Optional[str]:
-    """Generates goodnight message using DeepSeek."""
-    try:
-        client = AsyncOpenAI(
-            api_key=Config.PROXY_API_KEY,
-            base_url="https://api.proxyapi.ru/openrouter/v1"
-        )
-        response = await client.chat.completions.create(
-            model=Config.DEEPSEEK_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": "Say goodnight with wit and warmth."}
-            ],
-            max_tokens=150,
-            temperature=0.8
-        )
-        return response.choices[0].message.content.strip() if response.choices else None
-    except Exception as e:
-        logger.error(f"❌ Goodnight error: {e}")
+        logger.error(f"❌ Whisper error: {e}")
         return None
 
 
 async def search_web(query: str) -> Optional[str]:
-    """Performs web search using DeepSeek."""
+    """Выполняет веб-поиск через DeepSeek с инструментом web_search."""
     try:
         client = AsyncOpenAI(
             api_key=Config.PROXY_API_KEY,
             base_url="https://api.proxyapi.ru/openrouter/v1"
         )
+
+        messages = [
+            {"role": "system", "content": "Ты — Сумеречная Искорка. Используй веб-поиск, чтобы найти актуальную информацию по запросу пользователя. Отвечай кратко, но содержательно, с сарказмом. ОТВЕЧАЙ НА РУССКОМ ЯЗЫКЕ."},
+            {"role": "user", "content": query}
+        ]
+
         response = await client.chat.completions.create(
             model=Config.DEEPSEEK_MODEL,
-            messages=[
-                {"role": "system", "content": "You are Twilight Sparkle. Search the web for information."},
-                {"role": "user", "content": query}
-            ],
+            messages=messages,
             tools=[{"type": "web_search"}],
             max_tokens=1000,
-            temperature=0.8
+            temperature=0.8,
+            timeout=30.0
         )
-        return response.choices[0].message.content.strip() if response.choices else None
+
+        if response.choices and len(response.choices) > 0:
+            return response.choices[0].message.content.strip()
+        return None
+
     except Exception as e:
         logger.error(f"❌ Search error: {e}")
         return None
