@@ -3,7 +3,7 @@
 Отправка факта дня в 10:00 и спокойной ночи в 21:00.
 
 Автор: MADAO81
-Версия: 1.0
+Версия: 1.1 — разбивка длинных сообщений
 """
 
 import logging
@@ -69,7 +69,6 @@ def get_active_chats():
 
 
 async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /subscribe."""
     chat_id = update.message.chat_id
     add_chat(chat_id)
     await update.message.reply_text(
@@ -82,7 +81,6 @@ async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /unsubscribe."""
     chat_id = update.message.chat_id
     remove_chat(chat_id)
     await update.message.reply_text(
@@ -90,6 +88,33 @@ async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         "Если захочешь вернуться — напиши /subscribe 📚",
         parse_mode="Markdown"
     )
+
+
+async def send_long_message(bot, chat_id: int, text: str, parse_mode: str = "Markdown"):
+    """Отправляет длинное сообщение, разбивая на части."""
+    if not text:
+        return
+
+    if len(text) < 4000:
+        await bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
+        return
+
+    parts = []
+    current_part = ""
+    for paragraph in text.split('\n'):
+        if len(current_part) + len(paragraph) + 1 < 4000:
+            current_part += paragraph + '\n'
+        else:
+            parts.append(current_part.strip())
+            current_part = paragraph + '\n'
+    if current_part:
+        parts.append(current_part.strip())
+
+    for i, part in enumerate(parts):
+        if i == 0:
+            await bot.send_message(chat_id=chat_id, text=part, parse_mode=parse_mode)
+        else:
+            await bot.send_message(chat_id=chat_id, text=f"*Продолжение:*\n{part}", parse_mode="Markdown")
 
 
 async def send_daily_fact(app):
@@ -107,11 +132,7 @@ async def send_daily_fact(app):
 
     for chat_id in active_chats:
         try:
-            await app.bot.send_message(
-                chat_id=chat_id,
-                text=fact,
-                parse_mode="Markdown"
-            )
+            await send_long_message(app.bot, chat_id, fact)
             logger.info(f"✅ Факт дня отправлен в чат {chat_id}")
         except Exception as e:
             logger.error(f"❌ Ошибка отправки в чат {chat_id}: {e}")
@@ -134,11 +155,7 @@ async def send_goodnight(app):
 
     for chat_id in active_chats:
         try:
-            await app.bot.send_message(
-                chat_id=chat_id,
-                text=message,
-                parse_mode="Markdown"
-            )
+            await send_long_message(app.bot, chat_id, message)
             logger.info(f"✅ Спокойной ночи отправлена в чат {chat_id}")
         except Exception as e:
             logger.error(f"❌ Ошибка отправки в чат {chat_id}: {e}")
@@ -151,7 +168,6 @@ def start_scheduler(app):
     try:
         _init_db()
 
-        # Автоматическая загрузка подписок из .env
         default_chats = getattr(Config, 'DEFAULT_CHATS', "")
         if default_chats:
             for chat_id in default_chats.split(","):
@@ -162,7 +178,6 @@ def start_scheduler(app):
                 except Exception as e:
                     logger.error(f"❌ Ошибка добавления чата {chat_id}: {e}")
 
-        # Факт дня в 10:00
         scheduler.add_job(
             send_daily_fact,
             CronTrigger(hour=10, minute=0),
@@ -171,7 +186,6 @@ def start_scheduler(app):
             replace_existing=True
         )
 
-        # Спокойной ночи в 21:00
         scheduler.add_job(
             send_goodnight,
             CronTrigger(hour=21, minute=0),
@@ -188,7 +202,7 @@ def start_scheduler(app):
 
 
 def stop_scheduler():
-    """Останавливает планировщик рассылок."""
+    """Останавливает планировщик."""
     try:
         scheduler.shutdown()
         logger.info("⏹️ Планировщик рассылок остановлен")
