@@ -3,7 +3,7 @@
 Отправка факта дня в 10:00 и спокойной ночи в 21:00.
 
 Автор: MADAO81
-Версия: 1.1 — разбивка длинных сообщений
+Версия: 1.3 — исправлен parse_mode
 """
 
 import logging
@@ -110,6 +110,19 @@ async def send_long_message(bot, chat_id: int, text: str, parse_mode: str = "Mar
     if current_part:
         parts.append(current_part.strip())
 
+    if len(parts) == 1 and len(parts[0]) > 4000:
+        words = parts[0].split()
+        parts = []
+        current_part = ""
+        for word in words:
+            if len(current_part) + len(word) + 1 < 4000:
+                current_part += word + ' '
+            else:
+                parts.append(current_part.strip())
+                current_part = word + ' '
+        if current_part:
+            parts.append(current_part.strip())
+
     for i, part in enumerate(parts):
         if i == 0:
             await bot.send_message(chat_id=chat_id, text=part, parse_mode=parse_mode)
@@ -118,7 +131,6 @@ async def send_long_message(bot, chat_id: int, text: str, parse_mode: str = "Mar
 
 
 async def send_daily_fact(app):
-    """Отправляет факт дня в 10:00."""
     active_chats = get_active_chats()
     if not active_chats:
         logger.info("📭 Нет активных чатов для факта дня")
@@ -132,7 +144,7 @@ async def send_daily_fact(app):
 
     for chat_id in active_chats:
         try:
-            await send_long_message(app.bot, chat_id, fact)
+            await send_long_message(app.bot, chat_id, fact, parse_mode="Markdown")
             logger.info(f"✅ Факт дня отправлен в чат {chat_id}")
         except Exception as e:
             logger.error(f"❌ Ошибка отправки в чат {chat_id}: {e}")
@@ -141,7 +153,6 @@ async def send_daily_fact(app):
 
 
 async def send_goodnight(app):
-    """Отправляет пожелание спокойной ночи в 21:00."""
     active_chats = get_active_chats()
     if not active_chats:
         logger.info("📭 Нет активных чатов для пожелания спокойной ночи")
@@ -155,7 +166,7 @@ async def send_goodnight(app):
 
     for chat_id in active_chats:
         try:
-            await send_long_message(app.bot, chat_id, message)
+            await send_long_message(app.bot, chat_id, message, parse_mode="Markdown")
             logger.info(f"✅ Спокойной ночи отправлена в чат {chat_id}")
         except Exception as e:
             logger.error(f"❌ Ошибка отправки в чат {chat_id}: {e}")
@@ -164,7 +175,6 @@ async def send_goodnight(app):
 
 
 def start_scheduler(app):
-    """Запускает планировщик рассылок."""
     try:
         _init_db()
 
@@ -202,7 +212,6 @@ def start_scheduler(app):
 
 
 def stop_scheduler():
-    """Останавливает планировщик."""
     try:
         scheduler.shutdown()
         logger.info("⏹️ Планировщик рассылок остановлен")
