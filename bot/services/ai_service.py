@@ -1,9 +1,17 @@
+"""
+AI сервис для бота Сумеречная Искорка.
+Гибридный режим: DeepSeek (текст + поиск) + OpenAI (картинки + голос).
+
+Автор: MADAO81
+Версия: 2.3 — увеличен max_tokens для рассылок
+"""
+
 import logging
 import base64
 import os
 import time
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, List, Dict, Any
 from openai import AsyncOpenAI
 from bot.config import Config
 from bot.core.constants import SYSTEM_PROMPT
@@ -66,7 +74,7 @@ async def get_daily_fact() -> Optional[str]:
             base_url="https://api.proxyapi.ru/openrouter/v1"
         )
 
-        prompt = "Расскажи короткий, интересный научный или исторический факт. ОБЯЗАТЕЛЬНО на русском языке. Будь остроумна и увлекательна, как Искорка."
+        prompt = "Расскажи короткий, интересный научный или исторический факт. ОБЯЗАТЕЛЬНО на русском языке. Будь остроумна и увлекательна, как Искорка. Ответ должен быть не слишком длинным — 3-4 предложения."
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt}
@@ -75,7 +83,7 @@ async def get_daily_fact() -> Optional[str]:
         response = await client.chat.completions.create(
             model=Config.DEEPSEEK_MODEL,
             messages=messages,
-            max_tokens=300,
+            max_tokens=500,  # Увеличено с 200 до 500
             temperature=0.8,
             timeout=30.0
         )
@@ -97,7 +105,7 @@ async def get_goodnight_message() -> Optional[str]:
             base_url="https://api.proxyapi.ru/openrouter/v1"
         )
 
-        prompt = "Пожелай пользователю спокойной ночи. ОБЯЗАТЕЛЬНО на русском языке. Сделай это остроумно, но тепло. Ты — Искорка."
+        prompt = "Пожелай пользователю спокойной ночи. ОБЯЗАТЕЛЬНО на русском языке. Сделай это остроумно, но тепло. Ты — Искорка. Ответ должен быть коротким — 2-3 предложения."
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt}
@@ -106,7 +114,7 @@ async def get_goodnight_message() -> Optional[str]:
         response = await client.chat.completions.create(
             model=Config.DEEPSEEK_MODEL,
             messages=messages,
-            max_tokens=200,
+            max_tokens=300,  # Увеличено с 200 до 300
             temperature=0.8,
             timeout=30.0
         )
@@ -125,9 +133,6 @@ async def analyze_image(
     user_message: Optional[str] = None,
     mood_description: str = "happy"
 ) -> Optional[str]:
-    """
-    Анализирует изображение через OpenAI Vision API (через ProxyAPI).
-    """
     logger.info("🖼️ Request to OpenAI Vision API...")
     try:
         client = AsyncOpenAI(
@@ -188,9 +193,6 @@ async def transcribe_audio(
     audio_data: bytes,
     file_extension: str = ".ogg"
 ) -> Optional[str]:
-    """
-    Транскрибирует аудио через OpenAI Whisper (через ProxyAPI).
-    """
     try:
         client = AsyncOpenAI(
             api_key=Config.PROXY_API_KEY,
@@ -223,7 +225,6 @@ async def transcribe_audio(
 
 
 async def search_web(query: str) -> Optional[str]:
-    """Выполняет веб-поиск через DeepSeek с инструментом web_search."""
     try:
         client = AsyncOpenAI(
             api_key=Config.PROXY_API_KEY,
