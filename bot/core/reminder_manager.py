@@ -3,7 +3,7 @@
 Поддерживает личные и групповые напоминания.
 
 Автор: MADAO81
-Версия: 2.3 — умный поиск с нормализацией текста
+Версия: 2.4 — is_private по умолчанию True (страховка от невидимых напоминаний)
 """
 
 import sqlite3
@@ -43,7 +43,7 @@ class ReminderManager:
 
     def add_reminder(self, user_id: int, chat_id: int, text: str, remind_at: datetime,
                      is_recurring: bool = False, recurring_type: Optional[str] = None,
-                     is_private: bool = False) -> int:
+                     is_private: bool = True) -> int:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("""

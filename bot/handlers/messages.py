@@ -19,6 +19,15 @@ reminder_manager = ReminderManager()
 reminder_parser = ReminderParser()
 
 
+def _escape_markdown(text: str) -> str:
+    """Экранирует спецсимволы Markdown (V1): _ * ` [ ]"""
+    if not text:
+        return text
+    for ch in ['_', '*', '`', '[', ']']:
+        text = text.replace(ch, '\\' + ch)
+    return text
+
+
 async def send_long_message(update: Update, text: str, reply_to_message_id: int = None, parse_mode: str = None):
     if not text:
         return
@@ -90,7 +99,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
         # === НАПОМИНАНИЯ ===
-        reminder_keywords = ["напомни", "напоминание", "напомнить", "запомни"]
+        reminder_keywords = ["напомни", "напоминай", "напоминание", "напомнить", "запомни"]
         if any(keyword in user_message.lower() for keyword in reminder_keywords):
             parsed = reminder_parser.parse_reminder(user_message)
             if parsed:
@@ -115,10 +124,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 type_label = "🔒 Личное" if is_private else "📢 Групповое"
                 type_desc = "в личку" if is_private else f"в группу {update.message.chat.title or 'эту группу'}"
 
+                # ЭКРАНИРУЕМ пользовательский текст, чтобы Markdown не сломался
+                safe_text = _escape_markdown(text)
+                safe_type_desc = _escape_markdown(type_desc)
+
                 confirm_text = (
                     f"✅ *Напоминание сохранено!*\n\n"
-                    f"📌 *Тип:* {type_label} (придёт {type_desc})\n"
-                    f"📌 *Текст:* {text}\n"
+                    f"📌 *Тип:* {type_label} (придёт {safe_type_desc})\n"
+                    f"📌 *Текст:* {safe_text}\n"
                     f"🕐 *Время:* {remind_at.strftime('%d.%m.%Y в %H:%M')}"
                 )
                 if is_recurring:
@@ -146,7 +159,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if success:
                     await send_long_message(update, f"✅ *Напоминание отменено!*", parse_mode="Markdown")
                 else:
-                    await send_long_message(update, f"❌ Не нашла напоминание по запросу: _{query}_", parse_mode="Markdown")
+                    await send_long_message(update, f"❌ Не нашла напоминание по запросу: _{_escape_markdown(query)}_", parse_mode="Markdown")
                 return
 
         # === ПОГОДА ===
