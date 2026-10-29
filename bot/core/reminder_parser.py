@@ -3,7 +3,7 @@
 Поддерживает личные и групповые, а также ежемесячные повторения.
 
 Автор: MADAO81
-Версия: 3.1 — убираем @упоминание бота перед парсингом
+Версия: 3.2 — убираем одиночный @ и вырезаем ключевые слова в любом месте
 """
 
 import re
@@ -24,8 +24,9 @@ class ReminderParser:
         """
         text_for_search = text.lower().strip()
 
-        # === УБИРАЕМ @УПОМИНАНИЕ БОТА (например, "@twilight_sparkle_rus_bot") ===
-        text_for_search = re.sub(r'@\w+', '', text_for_search).strip()
+        # === УБИРАЕМ @УПОМИНАНИЯ (с словом и одиночные) ===
+        text_for_search = re.sub(r'@\w+', '', text_for_search)   # @username
+        text_for_search = re.sub(r'@\s*', '', text_for_search)    # одиночный @
         text_for_search = re.sub(r'\s+', ' ', text_for_search).strip()
 
         # Проверяем ключевые слова
@@ -42,12 +43,13 @@ class ReminderParser:
         if has_group_keyword and not has_reminder_keyword:
             text_for_search = "напомни " + text_for_search
 
-        # Убираем ключевые слова (ВАЖНО: "напоминай" и "напоминай мне" — ДО "напомни")
-        prefix_words = ["напоминай мне", "напоминай", "напоминание", "напомнить", "напомни", "запомни"]
-        for word in prefix_words:
-            if text_for_search.startswith(word):
-                text_for_search = text_for_search[len(word):].strip()
-                break
+        # === ВЫРЕЗАЕМ КЛЮЧЕВЫЕ СЛОВА В ЛЮБОМ МЕСТЕ (не только startswith) ===
+        # Сначала длинные формы, потом короткие
+        for word in ["напоминай мне", "напоминай", "напоминание", "напомнить", "напомни", "запомни"]:
+            if word in text_for_search:
+                text_for_search = text_for_search.replace(word, "", 1).strip()
+
+        text_for_search = re.sub(r'\s+', ' ', text_for_search).strip()
 
         # Определяем тип: личное или групповое (по умолчанию — личное)
         is_private = True
